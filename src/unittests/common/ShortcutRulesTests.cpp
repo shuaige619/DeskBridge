@@ -369,8 +369,10 @@ void ShortcutRulesTests::habitDirectionMatrix()
     QCOMPARE(effective.rules.size(), 3);
     for (int i = 0; i < 2; ++i) {
       const KeyID key = i ? 'v' : 'c';
-      QCOMPARE(effective.rules[i].input, (Chord{key, macHabit ? KeyModifierSuper : KeyModifierControl}));
-      QCOMPARE(effective.rules[i].output, (Chord{key, macTarget ? KeyModifierSuper : KeyModifierControl}));
+      QCOMPARE(effective.rules[i].input,
+               (deskflow::shortcuts::Chord{key, macHabit ? KeyModifierSuper : KeyModifierControl}));
+      QCOMPARE(effective.rules[i].output,
+               (deskflow::shortcuts::Chord{key, macTarget ? KeyModifierSuper : KeyModifierControl}));
     }
     QVERIFY2(validate(effective).isEmpty(), qPrintable(validate(effective)));
   }
