@@ -223,6 +223,7 @@ void ShortcutRulesTests::conflictsUseEffectiveAppIntersection()
   auto config = defaults();
   config.habit = Habit::Custom; // Exercise stored rules independently of the host's native preset.
   config.apps = {QStringLiteral("com.openai.codex")};
+  config.rules = defaultRules({QStringLiteral("com.openai.codex"), QStringLiteral("com.electron.lark")});
   auto duplicate = config.rules.first();
   duplicate.id = QStringLiteral("duplicate");
   duplicate.input.key = 'C';
