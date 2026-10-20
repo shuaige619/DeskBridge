@@ -305,10 +305,12 @@ public:
   IDataSocket *create(IArchNetwork::AddressFamily, SecurityLevel) const override
   {
     qFatal("ServerProxy tests must not create a network socket");
+    return nullptr;
   }
   IListenSocket *createListen(IArchNetwork::AddressFamily, SecurityLevel) const override
   {
     qFatal("ServerProxy tests must not create a listening socket");
+    return nullptr;
   }
 };
 
