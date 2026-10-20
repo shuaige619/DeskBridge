@@ -145,21 +145,28 @@ DESKBRIDGE_INPUT_TIMING=1 build/personal-mac/bin/DeskBridge.app/Contents/MacOS/D
 
 `p50/p95/p99` 是直方图桶的上界，`max` 是窗口内采样最大值。这些是客户端处理指标，不包含网络传输、macOS 消费已提交事件及屏幕显示的时间。建议分别对比普通移动、拖拽和复制大图片时的结果，再决定是否需要限制接收批次耗时或调整剪贴板调度。
 
-## 打包到独立 App
+## macOS 发行包
+
+Apple Silicon 发行包使用官方 Qt 6.11.2 和独立构建的 OpenSSL 3.6.5，编译目标为 macOS 14.4。打包会逐个检查 GUI、core、框架和插件的 Mach-O 最低系统版本，拒绝较新的动态依赖及构建机私有路径。现有功能的实机验证环境为 Apple Silicon macOS；最低版本兼容性由编译目标和依赖检查确认，未在每个历史系统版本上实测。
+
+从发行页下载 `DeskBridge-1.27.0.1-macos-arm64.dmg`，核对 `SHA256SUMS`，打开后把 `DeskBridge.app` 拖入 `Applications`。ZIP 包含相同 App。替换前先退出已运行的桌桥；设置和证书保存在 App 之外，安装包不携带任何已配对设备、个人配置、证书、信任库或运行日志。
+
+此发行包使用 ad-hoc 签名，尚未使用 Developer ID 公证。请按 macOS 正常的“打开”及“隐私与安全性”流程批准，再在系统设置中授予辅助功能和输入监控权限。Bundle ID 与原 Deskflow 不同，原版权限不会自动转移；升级更换签名后也可能需要重新授权。脚本不会更改系统安全设置或移除 quarantine。
+
+可重复构建需要 Xcode Command Line Tools、CMake 3.24+、Ninja、Python 3、Perl、curl 和 make。以下步骤把官方 SDK、源码、OpenSSL 及第三方许可证全部放在独立的 `build/release-deps`，不改动 Homebrew 或已安装 App：
 
 ```bash
-./deploy/mac/package-personal.sh build/personal-mac
+python3 deploy/mac/prepare-release-deps.py
+export QT_PREFIX="$PWD/build/release-deps/qt-6.11.2-macos"
+export OPENSSL_PREFIX="$PWD/build/release-deps/openssl-3.6.5-install-root/usr/local"
+export THIRD_PARTY_LICENSE_DIR="$PWD/build/release-deps/third-party-licenses-openssl-3.6.5"
+./deploy/mac/build-release.sh
+./deploy/mac/distribute-personal.sh build/release-macos-arm64 dist/macos-release
 ```
 
-脚本使用新的暂存目录，将 GUI、core、Qt 框架和插件、OpenSSL 等动态依赖一起部署到 `dist/DeskBridge-时间戳.app`；检查非系统依赖是否仍指向外部绝对路径，并验证 bundle 签名。已有输出路径会被拒绝覆盖。
+依赖下载使用固定版本与 SHA256 校验。发行构建使用 `-ffile-prefix-map` 规范化源码和构建路径，运行 26 组不注入真实输入的回归测试；打包产生 DMG、ZIP、安装说明、校验文件与机器可读验证记录。DMG 内含 Applications 快捷方式，脚本会只读挂载复核签名和快捷方式。已有输出目录拒绝覆盖。App 的 Resources 包含项目许可证、Qt 模块及第三方许可证、OpenSSL 许可证和对应源码链接。
 
-默认使用本地 ad-hoc 签名，不需要开发者账号，不做公证或上传。若已有用于自用开发的签名身份，可以显式选择：
-
-```bash
-SIGNING_IDENTITY='已有的签名身份' ./deploy/mac/package-personal.sh build/personal-mac
-```
-
-更换 ad-hoc 签名后的二进制可能需要在 macOS 中重新授权辅助功能等权限；个人版的 Bundle ID 与原版不同，原版的系统权限不会自动转给个人版。脚本不修改系统授权、不移除 quarantine、不更改 Gatekeeper 设置。请在系统正常的打开和授权流程中处理需要的权限。
+日常本机开发仍可使用 `deploy/mac/package-personal.sh build/personal-mac` 生成独立 App。Homebrew 依赖的最低系统版本可能随其构建环境变化，不能据此承诺发行包的系统兼容范围。
 
 ## 首次配置与切换
 
@@ -171,56 +178,20 @@ python3 tools/prepare_personal_config.py
 
 默认只检查配置和文件是否存在，不复制证书。确认后加 `--apply`，会把原客户端配置和本机 TLS 身份复制到新的私有 `~/Library/DeskBridge/`，保留服务端信任、屏幕名称及 TLS 验证，首次自动连接关闭。该目录必须尚不存在；工具拒绝覆盖，证书私钥只在本机复制且权限为 600。原配置不修改。沿用本机已被 Ubuntu 信任的身份时，不需要重新修改服务器的配对记录。
 
-先审查个人版界面与快捷键选项，关闭“打开桌桥时自动连接 Ubuntu”，保留当前共享连接。确认设置后退出原 Deskflow 客户端和现有 Hammerspoon 转换，再手动启动个人版连接，避免两套客户端同时接收和注入输入。
+先审查个人版界面与快捷键选项，关闭首次自动共享。确认设置后退出原 Deskflow 客户端及已有快捷键转换工具，再手动启动桌桥连接。
 
-Ubuntu 接着作为服务端、屏幕在左侧；Mac 在右侧。个人版使用客户端模式，填写 Ubuntu 的可达地址与原来的 Mac 屏幕名称，并使用与服务端一致的协议及 TLS 选项。如果选择全新身份，首次连接需正常核对、信任新的证书。确认鼠标能双向越过屏幕边缘后，再验证 Codex 和飞书中的复制、粘贴与 `Ctrl+Space`，最后启用个人版的自动连接或登录启动。
+Mac 使用客户端模式，填写来源电脑的可达地址与原屏幕名称，并保持协议及 TLS 选项一致。首页布局编辑需要来源端也安装配套 DeskBridge，Linux 迁移见 [README-LINUX.md](README-LINUX.md)。如果选择全新身份，首次连接需核对、信任新的证书。确认跨屏、快捷键与输入法切换正常后，再启用自动共享或登录启动。
 
 原版 App、配置和证书保持可用；需要恢复时退出个人版再启动原版。
 
-## 本机验收（2026-10-19）
-
-用户已在 Mac 与 Ubuntu 的实际连接中确认：
-
-- 鼠标可以双向跨屏切换。
-- Codex、飞书中的远程 `Ctrl+C / Ctrl+V` 均正常复制、粘贴。
-- `Ctrl+Space` 切换输入法正常。
-
-本机后续由 **Mac 运行 DeskBridge，Ubuntu 沿用 Deskflow**。Hammerspoon 不再需要运行，其配置和备份保留。Codex 内置终端的 `Ctrl+C` 限制仍适用；需要终端中断时，将 Codex 从应用范围移除，或在复制规则中取消选择 Codex。
-
-### 多设备方案复验（2026-10-20）
-
-用户使用接在 Ubuntu 上的真实键鼠确认，新增多设备快捷键方案后，当前“自动 + Linux 来源”配置下，鼠标双向跨屏、Codex／飞书普通输入框中的 Ctrl+C/V、Ctrl+空格输入法切换全部正常。三个方案的一键保存与重连此前已由安装版 GUI 验证。Windows 11 仍待编译和实机验收，见 [README-WINDOWS.md](README-WINDOWS.md)。
-
-### 完整快捷键适配验收（2026-10-20）
-
-本机已启用“完整快捷键适配 + 用于全部应用”，保持自动方案和 Linux 备用来源。用户用 Ubuntu 真实键盘完成 Ctrl+A/Z/Shift+Z/C/V、Ctrl+Space、鼠标双向跨屏及所请求浏览器 Ctrl+F 测试，回复全部正常。15 个相关安全测试 suite 通过。
-
-启用时已备份并移除本机此前五个全局 Ctrl+C/V 菜单覆盖，恢复原生菜单组合；Codex/飞书各自 Command 菜单设置未改。旧 App、profile 与菜单备份在 `~/.cache/deskflow-setup/before-full-shortcuts-20261020/`。这是本机既有配置的恢复，应用不会自动修改其他用户的系统菜单快捷键。
-
 ## 登录启动与回退
 
-在已安装的 Mac 版“通用 → 启动与窗口”中，“登录时启动”开关直接读取和修改系统登录项，独立即时生效，不需要点“应用更改”。它只控制后续登录时打开桌桥，不改变当前共享连接、自动连接、隐藏窗口或其他未保存设置。打开后要自动连接，可同时开启“打开桌桥时自动启动共享”。
+在已安装 Mac 版的“通用 → 启动与窗口”中，“登录时启动”直接读取和修改系统登录项，即时生效。它控制下次登录时打开桌桥；如需自动开始共享，同时开启“打开桌桥时自动启动共享”。请从 `/Applications/DeskBridge.app` 或 `~/Applications/DeskBridge.app` 使用此功能。
 
-macOS 13+ 使用系统 `SMAppService.mainApp` 管理主应用登录启动。若系统要求允许，开关旁显示待批准状态，可点“在系统设置中允许…”进入登录项设置；返回桌桥时重新读取状态。读取或修改失败会显示原因，读取不可靠时禁用开关。构建目录、dist 暂存副本与其他平台不会修改本机登录项；请从 `/Applications/DeskBridge.app` 或 `~/Applications/DeskBridge.app` 使用本功能。
+macOS 13+ 使用系统 `SMAppService.mainApp`。系统要求批准时，开关旁显示状态，可进入系统设置允许后返回。旧桌桥 LaunchAgent 会兼容读取；主动关闭时仅清理经过归属核对的旧桌桥文件。系统登录项与旧 LaunchAgent 的迁移不会操作 Deskflow 或其他应用的启动项。
 
-原有 `~/Library/LaunchAgents/local.shuai.deskbridge.login.plist` 会兼容读取，查询不会自动迁移。明确关闭时只清理经过归属核对的旧桌桥启动文件；不卸载当前运行的 launchd job。随后开启使用系统主 App 登录项；新项需要批准时会保留旧文件并明确提示。不会操作原 Deskflow、Hammerspoon 或其他应用的启动项。
+切换前保留旧 Deskflow 安装及原配置，并停用它的重复登录启动。需要回退时，先关闭桌桥的“登录时启动”并退出桌桥，再从原应用启动共享，按需恢复其登录项。来源端与客户端都只运行一套共享进程。
 
-原 Deskflow 登录启动文件备份到 `~/.cache/deskflow-setup/org.deskflow.login.plist.before-deskbridge`，避免两套客户端在登录时同时连接。Hammerspoon 退出并关闭登录启动，保留原配置与备份供回退使用。
+## 验证范围
 
-历史启动项模板保存在 `deploy/mac/local.shuai.deskbridge.login.plist`，用于兼容与恢复。此前已验证过该 LaunchAgent 拉起 GUI/core 并自动重连 Ubuntu；此检查通过加载启动项完成，未注销当前系统会话。新的应用内开关验证另见本轮验证记录。
-
-需要回退时：
-
-1. 在桌桥“通用”中关闭“登录时启动”，再退出 DeskBridge。旧版没有该开关时需停用旧的 DeskBridge LaunchAgent。
-2. 将原 Deskflow plist 备份恢复至 `~/Library/LaunchAgents/org.deskflow.login.plist`，重新加载它或手动启动原 Deskflow。
-3. 如需恢复旧的快捷键转换，再启动 Hammerspoon；需要随登录运行时重新启用其登录启动。
-
-Ubuntu 端无需更换软件。原 Deskflow App、配置和证书继续保留；回退时也应只运行一套 Mac 客户端与快捷键转换规则。
-
-### 统一轻按 Shift 实机验收（2026-10-20）
-
-用户确认已安装版本的全部真实键鼠测试正常：远程左右Shift轻按切换中英文、Shift+A及Shift+方向键不误触、Ctrl+Space、Ctrl+C/V和鼠标双向跨屏。当前已开启轻按Shift，保留Ubuntu原生输入法行为及Mac的原有完整快捷键适配、登录启动和窗口偏好。
-
-### 添加应用交互修复（2026-10-20）
-
-“添加应用”窗口现使用整行多选：点击名称或图标即可选择，再次点击取消本次选择；按钮显示“添加N个应用”，没有新选时不能确认。搜索保留已选项，已添加应用明确标记并可返回映射页移除。确认后应用标签及规则范围立即回显为草稿，点“应用更改”后保存。修复版已在Mac原生界面验证新增回显，17组安全回归通过，原运行配置保持不变。
+已通过 Mac 与 Ubuntu 配套 DeskBridge 的真实 TLS 连接验证首页四方向拖放、服务端保存同步、双向跨屏、远程复制粘贴、完整快捷键适配与轻按 Shift。三台及以上设备的连通布局、冲突、过期请求、服务端发布及回退通过隔离自动化测试验证；未把两台实机测试表述为多台硬件验收。Windows 的构建和运行验证见 [README-WINDOWS.md](README-WINDOWS.md)。

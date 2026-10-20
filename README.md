@@ -8,8 +8,8 @@
 
 | 设备 | 安装包 | 说明 |
 | --- | --- | --- |
-| Apple Silicon Mac | `macos-arm64.dmg` 或 `.zip` | 打开 DMG，将 DeskBridge 拖入 Applications；最低系统版本见发布说明 |
-| Windows 11 x64 | `windows-x64-setup.exe` | 当前用户安装；另提供便携 ZIP |
+| Apple Silicon Mac，macOS 14.4+ | `macos-arm64.dmg` 或 `.zip` | 打开 DMG，将 DeskBridge 拖入 Applications |
+| Windows 11 x64 | `win-x64-setup.exe` | 当前用户安装；另提供便携 ZIP |
 | Linux x86_64 | `linux-x86_64.flatpak` | 使用 Flatpak 安装；已在 Ubuntu 22.04 X11 验证 |
 
 Intel Mac、Windows ARM64 和 Linux ARM64 暂未提供经过验证的二进制包。Mac 与 Windows 包暂未使用商业代码签名或 Apple 公证。

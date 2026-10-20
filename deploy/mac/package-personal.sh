@@ -34,9 +34,19 @@ stage_app="$stage_dir/DeskBridge.app"
 }
 cp "$repo_dir/README-PERSONAL.md" "$stage_app/Contents/Resources/README-PERSONAL.md"
 ditto "$repo_dir/LICENSES" "$stage_app/Contents/Resources/LICENSES"
+if [[ -n ${THIRD_PARTY_LICENSE_DIR:-} ]]; then
+  [[ -f $THIRD_PARTY_LICENSE_DIR/THIRD-PARTY-NOTICES.md ]] || {
+    printf 'Missing third-party notice index: %s\n' "$THIRD_PARTY_LICENSE_DIR" >&2; exit 1;
+  }
+  ditto "$THIRD_PARTY_LICENSE_DIR" "$stage_app/Contents/Resources/ThirdPartyLicenses"
+fi
 mkdir -p "$(dirname "$output_app")"
 ditto "$stage_app" "$output_app"
 output_app=$(cd "$(dirname "$output_app")" && pwd)/$(basename "$output_app")
+minimum_os=$(sed -n 's/^CMAKE_OSX_DEPLOYMENT_TARGET:[^=]*=//p' "$build_dir/CMakeCache.txt")
+if [[ -n $minimum_os ]]; then
+  /usr/libexec/PlistBuddy -c "Add :LSMinimumSystemVersion string $minimum_os" "$output_app/Contents/Info.plist"
+fi
 
 # Include the separate core executable when scanning dependencies (notably
 # OpenSSL), so neither executable relies on the build machine's Homebrew paths.
@@ -47,11 +57,19 @@ deploy_options=(
 )
 # Split Homebrew Qt modules (e.g. QtSvg used by the SVG image plugin) are
 # siblings of qtbase, outside macdeployqt's default framework search path.
-qt_opt_dirs=(/opt/homebrew/opt /usr/local/opt)
-if [[ -n ${QT_PREFIX:-} ]]; then qt_opt_dirs+=("$(dirname "$QT_PREFIX")"); fi
+qtpaths="$(dirname "$deployqt")/qtpaths"
+qt_lib_dirs=()
+if [[ -x $qtpaths ]]; then qt_lib_dirs+=("$("$qtpaths" --query QT_INSTALL_LIBS)"); fi
+# Explicit SDK builds must never pick up frameworks from an unrelated Qt.
+if [[ -z ${QT_PREFIX:-} ]]; then
+  for qt_opt_dir in /opt/homebrew/opt /usr/local/opt; do
+    for qt_lib_dir in "$qt_opt_dir"/qt*/lib; do
+      [[ -d $qt_lib_dir ]] && qt_lib_dirs+=("$qt_lib_dir")
+    done
+  done
+fi
 svg_lib_dir=
-for qt_opt_dir in "${qt_opt_dirs[@]}"; do
-  for qt_lib_dir in "$qt_opt_dir"/qt*/lib; do
+for qt_lib_dir in "${qt_lib_dirs[@]}"; do
     [[ -d $qt_lib_dir ]] || continue
     if [[ -z $svg_lib_dir && -d $qt_lib_dir/QtSvg.framework ]]; then svg_lib_dir=$qt_lib_dir; fi
     for qt_framework in "$qt_lib_dir"/*.framework; do
@@ -60,14 +78,12 @@ for qt_opt_dir in "${qt_opt_dirs[@]}"; do
         break
       fi
     done
-  done
 done
 # Qt 6.12's @rpath resolver does not consult -libpath. Seed the SVG plugins
 # before deployment and resolve their QtSvg load to its actual source location.
 # macdeployqt then sees QtSvg as an ordinary framework dependency, copies it,
 # rewrites these temporary source loads, and signs the finished bundle. Only
 # copies inside this new output bundle are modified; installed Qt is untouched.
-qtpaths="$(dirname "$deployqt")/qtpaths"
 if [[ -n $svg_lib_dir && -x $qtpaths ]]; then
   qt_plugin_dir=$("$qtpaths" --query QT_INSTALL_PLUGINS)
   for svg_plugin in iconengines/libqsvgicon.dylib imageformats/libqsvg.dylib; do

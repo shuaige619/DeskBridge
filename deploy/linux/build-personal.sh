@@ -31,7 +31,7 @@ cmake -S "$repo_dir" -B "$build_dir" -G Ninja \
   "-DBUILD_TESTS=$run_tests" -DSKIP_BUILD_TESTS=ON "$@"
 build_targets=(DeskBridge deskflow-core app_translations)
 if [[ $run_tests == ON ]]; then
-  build_targets+=(ScreenLayoutTests ScreenLayoutPersistenceTests CoreProcessStopTests ServerProxyTests ServerConfigTests ClientProxyTests PacketStreamFilterTests InputTimingMetricsTests)
+  build_targets+=(ScreenLayoutTests ScreenLayoutPersistenceTests CoreProcessStopTests ServerProxyTests ServerConfigTests ClientProxyTests PacketStreamFilterTests InputTimingMetricsTests ServerTests DeviceIllustrationTests IpcServerAccessTests SettingsTests)
 fi
 cmake --build "$build_dir" --target "${build_targets[@]}" --parallel "${DESKBRIDGE_BUILD_JOBS:-$(getconf _NPROCESSORS_ONLN)}"
 if [[ $run_tests == ON ]]; then
@@ -40,7 +40,7 @@ if [[ $run_tests == ON ]]; then
   trap 'rm -rf -- "$test_state"' EXIT
   XDG_CONFIG_HOME="$test_state/config" XDG_STATE_HOME="$test_state/state" QT_QPA_PLATFORM=offscreen \
     ctest --test-dir "$build_dir/src/unittests" --no-tests=error \
-    -R '^(ScreenLayoutTests|ScreenLayoutPersistenceTests|CoreProcessStopTests|ServerProxyTests|ServerConfigTests|ClientProxyTests|PacketStreamFilterTests|InputTimingMetricsTests)$' --output-on-failure
+    -R '^(ScreenLayoutTests|ScreenLayoutPersistenceTests|CoreProcessStopTests|ServerProxyTests|ServerConfigTests|ClientProxyTests|PacketStreamFilterTests|InputTimingMetricsTests|ServerTests|DeviceIllustrationTests|IpcServerAccessTests|SettingsTests)$' --output-on-failure
   python3 -m unittest discover -s "$repo_dir/tools" -p 'test_prepare_personal_server.py' -v
 fi
 printf '\nBuilt: %s/bin/DeskBridge\nCore: %s/bin/deskflow-core\n' "$build_dir" "$build_dir"

@@ -2,15 +2,25 @@
 
 Mac 客户端的主页拖放布局需要来源端也运行配套 DeskBridge。旧 Ubuntu Deskflow 可以继续共享键鼠，但不会提供远程布局能力。本文件准备独立的 Linux 服务端构建与配置。
 
-2026-10-20 已在 Ubuntu 22.04.5 的 KDE 6.11 Flatpak SDK 中完成构建，8 个隔离 CTest suite 和 11 项配置迁移测试通过。独立应用 `local.shuai.deskbridge` 已安装并接管服务端，与 Mac 的加密连接正常；主页四方向拖放与服务端配置逐项核对通过，最后恢复 Mac 在来源电脑右侧，并迁移原本启用的登录启动设置。
+## Linux x86_64 发行包
 
-## Ubuntu 22.04 与 Flatpak
+发行包为 `DeskBridge-1.27.0.1-linux-x86_64.flatpak`，已在 Ubuntu 22.04.5 和 KDE Platform 6.11 上构建验证。安装发行版提供的 Flatpak 后，添加 Flathub 以取得匹配运行时，核对发行页 `SHA256SUMS`，再安装本地 bundle：
 
-这台 Ubuntu 的原服务端是 `org.deskflow.deskflow` Flatpak，使用 KDE Platform 6.11。系统软件源的 CMake 3.22、Qt 6.2 和 libportal 0.6 低于源码最低要求，因此本轮使用用户级 KDE SDK 6.11 构建独立 Flatpak，未升级系统软件包。构建环境为 GCC 15.2、Qt 6.11.2、OpenSSL 3.5.7，附加依赖按仓库 Flatpak manifest 的固定 commit 构建。
+```bash
+flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+flatpak install --user flathub org.kde.Platform//6.11
+flatpak install --user ./DeskBridge-1.27.0.1-linux-x86_64.flatpak
+```
 
-新应用 ID 为 `local.shuai.deskbridge`，保持原 Deskflow 安装及其数据目录。原配置位于 `~/.var/app/org.deskflow.deskflow/config/Deskflow`；新配置位于 `~/.var/app/local.shuai.deskbridge/config/DeskBridge`。迁移时应显式传入这两个目录。
+完成配置检查、保存并退出原共享进程后，从图形会话运行：
 
-已构建的本地 bundle 可通过 `flatpak install --user /path/to/DeskBridge-screen-layout.flatpak` 安装。完成停用旧服务端和配置检查后，通过 `flatpak run local.shuai.deskbridge` 启动。两端的登录启动设置应与实际使用的应用保持一致。
+```bash
+flatpak run local.shuai.deskbridge
+```
+
+新应用 ID 为 `local.shuai.deskbridge`，保持原 Deskflow 安装及数据目录。旧 Flatpak 的配置通常位于 `~/.var/app/org.deskflow.deskflow/config/Deskflow`；新配置位于 `~/.var/app/local.shuai.deskbridge/config/DeskBridge`。发行包不携带用户配置、证书、私钥、信任记录或运行日志。首次运行需自行配置，或使用下述迁移工具保留已有身份。
+
+构建环境为 KDE SDK 6.11、GCC 15.2、Qt 6.11.2、OpenSSL 3.5.7，以及按仓库 Flatpak manifest 固定 commit 构建的 libei 和 libportal。Qt 和系统库由 KDE Platform 提供；bundle 内含应用与附加依赖的许可证和源码链接。Ubuntu 22.04 自带 CMake、Qt 和 libportal 版本低于源码要求，发行构建使用用户级 SDK，不升级系统软件包。
 
 ## 构建依赖
 
@@ -30,11 +40,21 @@ libxkbcommon-dev libei-dev libportal-dev help2man
 ./deploy/linux/build-personal.sh --test
 ```
 
-`--test` 运行隔离的布局、配置事务、传输和客户端协议测试，以及服务端配置迁移测试。默认输出为 `build/personal-linux/bin/DeskBridge` 和 `build/personal-linux/bin/deskflow-core`。可省略 `--test` 只构建，或指定构建目录和额外 CMake 参数：
+`--test` 运行 12 组隔离测试，覆盖布局、配置事务、服务端发布、传输、客户端协议、同用户 IPC 和设置，以及 11 项服务端配置迁移测试。默认输出为 `build/personal-linux/bin/DeskBridge` 和 `build/personal-linux/bin/deskflow-core`。可省略 `--test` 只构建，或指定构建目录和额外 CMake 参数：
 
 ```bash
 ./deploy/linux/build-personal.sh --test build/personal-linux -DQt6_DIR=/path/to/Qt/lib/cmake/Qt6
 ```
+
+已在 KDE SDK 内构建、测试并安装到 `/app` 暂存目录后，可用下列脚本导出本地 bundle。`prepared-flatpak` 是已完成 `flatpak build-finish` 的 SDK 构建目录；依赖源码目录需包含 manifest 固定 commit 的 `libei` 与 `libportal` Git 检出。脚本验证这两个 commit，复制运行所需文件与许可证，排除构建工具、头文件、Python 包和缓存，清除 ELF 调试路径，再检查私人路径及敏感文件名。
+
+```bash
+DESKBRIDGE_DEPENDENCY_SOURCES=/path/to/pinned-sources \
+  ./deploy/linux/package-personal-flatpak.sh /path/to/prepared-flatpak \
+  /path/to/new-release-directory SOURCE_COMMIT
+```
+
+此步骤需要 Flatpak、Git、Python 3、GNU strip、sha256sum，以及完整 GNU GPL 3 文本（默认 `/usr/share/common-licenses/GPL-3`，可通过 `DESKBRIDGE_GPL3_LICENSE` 指定）。它创建新的导出目录、仓库、bundle、校验文件和验证记录，拒绝覆盖输出，不会安装、启动或替换当前应用。
 
 ## 准备已有服务端身份
 

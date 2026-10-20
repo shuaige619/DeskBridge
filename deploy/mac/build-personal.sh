@@ -20,6 +20,12 @@ qt_prefix=${QT_PREFIX:-}
 qttools_prefix=${QTTOOLS_PREFIX:-}
 qttranslations_prefix=${QTTRANSLATIONS_PREFIX:-}
 openssl_prefix=${OPENSSL_PREFIX:-}
+# A complete SDK already contains tools/translations. Do not mix it with a
+# different Homebrew Qt version just because those split packages are present.
+if [[ -n $qt_prefix ]]; then
+  qttools_prefix=${QTTOOLS_PREFIX:-$qt_prefix}
+  qttranslations_prefix=${QTTRANSLATIONS_PREFIX:-$qt_prefix}
+fi
 for brew_prefix in /opt/homebrew /usr/local; do
   if [[ -z $qt_prefix && -d $brew_prefix/opt/qtbase ]]; then qt_prefix=$brew_prefix/opt/qtbase; fi
   if [[ -z $qt_prefix && -d $brew_prefix/opt/qt ]]; then qt_prefix=$brew_prefix/opt/qt; fi
