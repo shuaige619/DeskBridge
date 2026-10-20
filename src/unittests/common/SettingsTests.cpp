@@ -13,6 +13,14 @@
 #include <filesystem>
 
 namespace {
+QString expectedSettingsBase(const QString &isolatedPath)
+{
+#ifdef Q_OS_WIN
+  if (!Settings::isPortableMode()) return Settings::SystemDir;
+#endif
+  return isolatedPath;
+}
+
 bool canIsolateCertificateMigration()
 {
 #ifdef Q_OS_WIN
@@ -50,12 +58,12 @@ void SettingsTests::settingsFile()
 
 void SettingsTests::settingsPath()
 {
-  QVERIFY(Settings::settingsPath().endsWith(m_settingsPath));
+  QVERIFY(Settings::settingsPath().endsWith(expectedSettingsBase(m_settingsPathTemp)));
 }
 
 void SettingsTests::tlsDir()
 {
-  QVERIFY(Settings::tlsDir().endsWith(m_expectedTlsDir));
+  QVERIFY(Settings::tlsDir().endsWith(expectedSettingsBase(m_settingsPathTemp) + "/tls"));
 }
 
 void SettingsTests::certificatePathMigration_data()
@@ -208,12 +216,12 @@ void SettingsTests::certificateMigrationRejectsUnreadableConfiguration()
 
 void SettingsTests::tlsTrustedServersDb()
 {
-  QVERIFY(Settings::tlsTrustedServersDb().endsWith(m_expectedTlsServerDB));
+  QVERIFY(Settings::tlsTrustedServersDb().endsWith(expectedSettingsBase(m_settingsPathTemp) + "/tls/trusted-servers"));
 }
 
 void SettingsTests::tlsTrustedClientsDb()
 {
-  QVERIFY(Settings::tlsTrustedClientsDb().endsWith(m_expectedTlsClientDB));
+  QVERIFY(Settings::tlsTrustedClientsDb().endsWith(expectedSettingsBase(m_settingsPathTemp) + "/tls/trusted-clients"));
 }
 
 void SettingsTests::checkValidSettings()
@@ -294,12 +302,20 @@ void SettingsTests::checkCleanComputerName_LongName()
 
 void SettingsTests::checkClearState()
 {
+  const auto computerName = Settings::value(Settings::Core::ComputerName);
+  const auto restore = qScopeGuard([&] { Settings::setValue(Settings::Core::ComputerName, computerName); });
+  Settings::setValue(Settings::Core::ComputerName, "keep-my-connection-settings");
   Settings::setValue(Settings::Gui::WindowGeometry, QRect(1, 2, 3, 4));
+  Settings::setValue(Settings::Client::XdpRestoreToken, "client-session-state");
+  Settings::setValue(Settings::Server::XdpRestoreToken, "server-session-state");
   QVERIFY(Settings::value(Settings::Gui::WindowGeometry).toRect().isValid());
 
   Settings::clearState();
 
   QVERIFY(!Settings::value(Settings::Gui::WindowGeometry).toRect().isValid());
+  QVERIFY(Settings::value(Settings::Client::XdpRestoreToken).toString().isEmpty());
+  QVERIFY(Settings::value(Settings::Server::XdpRestoreToken).toString().isEmpty());
+  QCOMPARE(Settings::value(Settings::Core::ComputerName).toString(), QStringLiteral("keep-my-connection-settings"));
 }
 
 QTEST_MAIN(SettingsTests)

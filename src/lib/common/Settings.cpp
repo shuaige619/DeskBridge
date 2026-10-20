@@ -65,8 +65,15 @@ void Settings::setStateFile(const QString &stateFile)
 
 void Settings::clearState()
 {
-  instance()->m_stateSettings->clear();
-  instance()->m_stateSettings->sync();
+  auto *settings = instance();
+  settings->m_stateSettings->clear();
+  settings->m_stateSettings->sync();
+  if (isPortableMode()) {
+    // Portable mode stores the same state keys alongside preferences. Clear
+    // those keys without deleting the user's connection or shortcut settings.
+    for (const auto &key : m_stateKeys) settings->m_settings->remove(key);
+    settings->m_settings->sync();
+  }
 }
 
 Settings::Settings(QObject *parent) : QObject(parent), m_settingsWatcher{new QFileSystemWatcher(this)}
