@@ -100,7 +100,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
       - name: Preserve failure diagnostics
-        if: failure()
+        if: failure() || inputs.diagnostics_only
         uses: actions/upload-artifact@v7
         with:
           name: deskbridge-windows-x64-diagnostics

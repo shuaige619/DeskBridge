@@ -93,8 +93,10 @@ function Invoke-IsolatedTests([string]$Directory) {
             [IO.File]::WriteAllText($marker, '')
             $markers += $marker
         }
-        Invoke-Checked 'ctest' @('--test-dir', "$Directory/src/unittests", '--output-on-failure',
+        $testArguments = @('--test-dir', "$Directory/src/unittests", '--output-on-failure',
             '--no-tests=error', '-R', $testRegex)
+        if ($DiagnosticsOnly) { $testArguments += '--verbose' }
+        Invoke-Checked 'ctest' $testArguments
     } finally {
         foreach ($name in $environmentBackup.Keys) {
             [Environment]::SetEnvironmentVariable($name, $environmentBackup[$name], 'Process')
