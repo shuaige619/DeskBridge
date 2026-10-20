@@ -1,6 +1,9 @@
 # SPDX-FileCopyrightText: (C) 2025 Chris Rizzitello <sithlord48@gmail.com>
 # SPDX-License-Identifier: MIT
 
+# CPack executes this file in a separate process, without the project's policies.
+cmake_minimum_required(VERSION 3.24)
+
 if(CPACK_GENERATOR MATCHES 7Z|ZIP)
   if("@DESKBRIDGE_PERSONAL_BUILD@")
     if(NOT EXISTS "@DESKBRIDGE_THIRD_PARTY_LICENSE_DIR@/THIRD-PARTY-NOTICES.md")

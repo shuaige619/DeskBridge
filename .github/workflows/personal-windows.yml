@@ -104,9 +104,13 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: deskbridge-windows-x64-diagnostics
+          # Only a failed full build can create notices/packages; diagnostics-only
+          # builds return before either step. These files remain diagnostics.
           path: |
             build/personal-windows-x64/Testing/Temporary/
             build/personal-windows-x64/src/unittests/Testing/Temporary/
             build/personal-windows-x64/installer-smoke.log
+            build/personal-windows-x64/ThirdPartyLicenses/
+            dist/windows/
           if-no-files-found: ignore
           retention-days: 14
