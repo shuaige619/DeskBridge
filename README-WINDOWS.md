@@ -12,6 +12,8 @@ Windows 包由仓库中的手动 GitHub Actions 工作流构建。工作流会�
 - `deskbridge-版本-win-x64-portable.zip`：解压到可写目录后双击 `DeskBridge.exe`。
 - `SHA256SUMS-windows.txt`：两个包的 SHA-256 校验值。
 
+当前包未加 Authenticode 签名，Windows 可能显示未知发布者；下载后请核对同次发布的 SHA-256 清单。
+
 安装版使用独立的 DeskBridge 安装身份；重新安装会保留已有设置，卸载也会保留个人设置与证书。安装目录中的 `settings/DeskBridge.conf` 是桌面进程模式标记，GUI 与 core 共用同一位置的设置及 `settings/tls/` 信任数据。Portable 版也必须保留此标记。
 
 更新 Portable 版时，先退出应用，将新 ZIP 解压到新目录，再把旧目录中的整个 `settings/` 文件夹复制过去（包括 `settings/tls/`）。新 ZIP 自带空白配置标记，直接覆盖解压会覆盖已有配置。
@@ -51,6 +53,12 @@ gh workflow run personal-windows.yml --repo shuaige619/DeskBridge --ref main
 ```
 
 没有额外输入或发布凭据；仓库需允许 GitHub Actions，操作者需有运行工作流的权限。Windows Server runner 的测试结果与真实 Windows 11 桌面交互验收分别记录。
+
+发布前，再运行 **Verify Windows release packages**，输入成功构建的 run ID。此流程直接下载原始 ZIP／安装版并核对 SHA-256，不安装开发 SDK；清除 Qt／QML／OpenSSL 开发环境变量并限制 PATH 后，再检查程序版本、安装、重装与卸载：
+
+```sh
+gh workflow run personal-windows-verify.yml --repo shuaige619/DeskBridge --ref main -f source_run_id=构建运行ID
+```
 
 ## 快捷键模式
 

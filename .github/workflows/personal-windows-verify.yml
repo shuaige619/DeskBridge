@@ -1,0 +1,52 @@
+# SPDX-FileCopyrightText: (C) 2026 DeskBridge contributors
+# SPDX-License-Identifier: MIT
+name: Verify Windows release packages
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: Successful Windows packaging run ID in this repository
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+jobs:
+  verify-windows-x64:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      # No Qt, vcpkg or build SDK is installed by this workflow.
+      - name: Download the successful packaging run artifacts
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:SOURCE_RUN_ID -notmatch '^[0-9]+$') { throw 'Invalid source run ID.' }
+          $runJson = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:SOURCE_RUN_ID"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not inspect source run.' }
+          $run = $runJson | ConvertFrom-Json
+          if ($run.path -ne '.github/workflows/personal-windows.yml' -or $run.conclusion -ne 'success') {
+              throw 'Source must be a successful Windows packaging run in this repository.'
+          }
+          gh run download $env:SOURCE_RUN_ID --repo $env:GITHUB_REPOSITORY --name deskbridge-windows-x64 --dir packages
+          if ($LASTEXITCODE -ne 0) { throw 'Could not download Windows artifacts.' }
+          "SOURCE_COMMIT=$($run.head_sha)" >> $env:GITHUB_ENV
+      - name: Verify the actual ZIP and installer without a developer environment
+        shell: pwsh
+        run: |
+          ./deploy/windows/verify-packages.ps1 -PackageDirectory packages -VerificationDirectory "$env:RUNNER_TEMP/deskbridge-package-verification"
+          "Verified source commit: $env:SOURCE_COMMIT" >> $env:GITHUB_STEP_SUMMARY
+      - name: Preserve verification diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: deskbridge-windows-verification-logs
+          path: |
+            ${{ runner.temp }}/deskbridge-package-verification/*.txt
+            ${{ runner.temp }}/deskbridge-package-verification/*.log
+          if-no-files-found: ignore
+          retention-days: 14
