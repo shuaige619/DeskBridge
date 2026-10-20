@@ -52,7 +52,7 @@ Inno Setup 不在默认位置时增加 `-InnoSetupCompiler 'C:/path/ISCC.exe'`�
 gh workflow run personal-windows.yml --repo shuaige619/DeskBridge --ref main
 ```
 
-没有额外输入或发布凭据；仓库需允许 GitHub Actions，操作者需有运行工作流的权限。Windows Server runner 的测试结果与真实 Windows 11 桌面交互验收分别记录。
+默认完整构建无需输入或发布凭据；仓库需允许 GitHub Actions，操作者需有运行工作流的权限。Windows Server runner 的测试结果与真实 Windows 11 桌面交互验收分别记录。可选 `diagnostics_only=true` 只构建并运行 `ShortcutRulesTests`、`SettingsTests`，用于读取平台断言，不生成或上传发布包；本地脚本对应 `-DiagnosticsOnly`。
 
 发布前，再运行 **Verify Windows release packages**，输入成功构建的 run ID。此流程直接下载原始 ZIP／安装版并核对 SHA-256，不安装开发 SDK；清除 Qt／QML／OpenSSL 开发环境变量并限制 PATH 后，再检查程序版本、安装、重装与卸载：
 

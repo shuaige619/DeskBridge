@@ -5,6 +5,12 @@ name: DeskBridge Windows x64 packages
 # Build on demand; the release owner attaches the verified files to a Release.
 on:
   workflow_dispatch:
+    inputs:
+      diagnostics_only:
+        description: Build and run only ShortcutRulesTests and SettingsTests; create no packages
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -56,6 +62,7 @@ jobs:
           & ./deps/vcpkg/bootstrap-vcpkg.bat -disableMetrics
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Install pinned installer compiler
+        if: ${{ !inputs.diagnostics_only }}
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -70,8 +77,11 @@ jobs:
           "INNO_COMPILER=$destination/ISCC.exe" >> $env:GITHUB_ENV
       - name: Build, test and verify installer plus portable archive
         shell: pwsh
+        env:
+          DESKBRIDGE_DIAGNOSTICS_ONLY: ${{ inputs.diagnostics_only }}
         run: |
-          ./deploy/windows/build-personal.ps1 -QtRoot $env:QT_ROOT_DIR -VcpkgRoot "$env:GITHUB_WORKSPACE/deps/vcpkg" -InnoSetupCompiler $env:INNO_COMPILER
+          $diagnosticsOnly = $env:DESKBRIDGE_DIAGNOSTICS_ONLY -eq 'true'
+          ./deploy/windows/build-personal.ps1 -QtRoot $env:QT_ROOT_DIR -VcpkgRoot "$env:GITHUB_WORKSPACE/deps/vcpkg" -InnoSetupCompiler $env:INNO_COMPILER -DiagnosticsOnly:$diagnosticsOnly
       - name: Save dependency archives even after a later build or test failure
         if: always() && steps.dependency-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
@@ -79,6 +89,7 @@ jobs:
           path: build/vcpkg-binary-cache
           key: deskbridge-vcpkg-469a0504-windows-2022-x64-windows-release-v1
       - name: Upload Windows packages
+        if: ${{ !inputs.diagnostics_only }}
         uses: actions/upload-artifact@v7
         with:
           name: deskbridge-windows-x64

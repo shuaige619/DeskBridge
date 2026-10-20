@@ -8,6 +8,7 @@ param(
     [string]$OutputDirectory,
     [string]$InnoSetupCompiler,
     [switch]$PortableOnly,
+    [switch]$DiagnosticsOnly,
     [switch]$SkipTests
 )
 
@@ -30,7 +31,8 @@ if ($env:VSCMD_ARG_TGT_ARCH -and $env:VSCMD_ARG_TGT_ARCH -ne 'x64') {
     throw 'This build script targets Windows x64. Select the x64 MSVC developer environment.'
 }
 
-if (-not $PortableOnly) {
+if ($DiagnosticsOnly -and $SkipTests) { throw 'DiagnosticsOnly requires its focused tests.' }
+if (-not $PortableOnly -and -not $DiagnosticsOnly) {
     if (-not $InnoSetupCompiler) {
         $innoCommand = Get-Command 'ISCC.exe' -ErrorAction SilentlyContinue
         if ($innoCommand) { $InnoSetupCompiler = $innoCommand.Source }
@@ -49,8 +51,9 @@ function Invoke-Checked([string]$Tool, [string[]]$Arguments) {
 
 function Invoke-IsolatedTests([string]$Directory) {
     $testRegex = '^(ShortcutRulesTests|ShortcutMapperTests|ShiftTapGestureTests|LoginStartupTests|ShortcutApplyControllerTests|KeyMapTests|KeyStateTests|IKeyStateTests|SettingsTests|ComputerShortcutTests|ServerProxyTests|CoreProcessStopTests|PersonalWindowTests|ShortcutPageTests|ChordRecorderTests|PersonalDialogTests|AdvancedPageTests|PreferenceChangesTests|PreferencesApplyControllerTests|ScreenLayoutPersistenceTests|DeviceIllustrationTests|ScreenLayoutTests|ServerConfigTests|ServerTests|ClientProxyTests|InputTimingMetricsTests|IpcServerAccessTests)$'
+    if ($DiagnosticsOnly) { $testRegex = '^(ShortcutRulesTests|SettingsTests)$' }
     $environmentBackup = @{}
-    foreach ($name in @('QT_QPA_PLATFORM', 'XDG_CONFIG_HOME', 'XDG_STATE_HOME')) {
+    foreach ($name in @('QT_QPA_PLATFORM', 'QT_FORCE_STDERR_LOGGING', 'XDG_CONFIG_HOME', 'XDG_STATE_HOME')) {
         $environmentBackup[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
     }
     $profile = Join-Path $Directory ('test-profile-' + [Guid]::NewGuid().ToString('N'))
@@ -59,6 +62,8 @@ function Invoke-IsolatedTests([string]$Directory) {
     try {
         New-Item -ItemType Directory -Force "$profile/config", "$profile/state" | Out-Null
         $env:QT_QPA_PLATFORM = 'offscreen'
+        # Qt 6.11 otherwise sends its Windows plain-test logger to the debugger.
+        $env:QT_FORCE_STDERR_LOGGING = '1'
         $env:XDG_CONFIG_HOME = "$profile/config"
         $env:XDG_STATE_HOME = "$profile/state"
         $manifestText = & ctest --test-dir "$Directory/src/unittests" --show-only=json-v1 -R $testRegex
@@ -130,10 +135,16 @@ try {
         "-DDESKBRIDGE_THIRD_PARTY_LICENSE_DIR:PATH=$($noticesDirectory.Replace([char]92, [char]47))",
         "-DDEPLOYQT:FILEPATH=$QtRoot/bin/windeployqt.exe"
     )
-    Invoke-Checked 'cmake' @('--build', $BuildDirectory, '--config', 'Release', '--parallel', '8', '--', '-k', '0')
+    $buildArguments = @('--build', $BuildDirectory, '--config', 'Release', '--parallel', '8')
+    if ($DiagnosticsOnly) { $buildArguments += @('--target', 'ShortcutRulesTests', 'SettingsTests') }
+    Invoke-Checked 'cmake' ($buildArguments + @('--', '-k', '0'))
     if (-not $SkipTests) {
         # Mock/state/widget tests only; never native input/clipboard suites.
         Invoke-IsolatedTests $BuildDirectory
+    }
+    if ($DiagnosticsOnly) {
+        Write-Output 'Focused ShortcutRulesTests and SettingsTests diagnostics completed; no release packages were created.'
+        return
     }
     Invoke-Checked 'python' @((Join-Path $PSScriptRoot 'prepare-notices.py'),
         '--directory', $noticesDirectory,
