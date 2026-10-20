@@ -170,14 +170,24 @@ void SettingsTests::certificateMigrationPreservesDanglingSymlink()
   const auto originalSettingsFile = Settings::settingsFile();
   const auto restoreSettings = qScopeGuard([&] { Settings::setSettingsFile(originalSettingsFile); });
   const auto legacyPath = profile.filePath(QStringLiteral("tls/%1.pem").arg(kAppId));
+  const auto missingIdentity = profile.filePath(QStringLiteral("missing-identity.pem"));
+  const auto nativeLegacyPath = QFile(legacyPath).filesystemFileName();
+  const auto nativeTargetPath = QFile(missingIdentity).filesystemFileName();
   QVERIFY(QDir().mkpath(profile.filePath(QStringLiteral("tls"))));
   std::error_code error;
-  std::filesystem::create_symlink(QFile(profile.filePath(QStringLiteral("missing-identity.pem"))).filesystemFileName(),
-                                  QFile(legacyPath).filesystemFileName(), error);
+  std::filesystem::create_symlink(nativeTargetPath, nativeLegacyPath, error);
   if (error)
     QSKIP("The current platform/account cannot create a symbolic-link fixture.");
   QVERIFY(QFileInfo(legacyPath).isSymLink());
-  QVERIFY(!QFile::exists(legacyPath));
+  QVERIFY(std::filesystem::is_symlink(nativeLegacyPath, error));
+  QVERIFY2(!error, error.message().c_str());
+  QVERIFY(std::filesystem::read_symlink(nativeLegacyPath, error) == nativeTargetPath);
+  QVERIFY2(!error, error.message().c_str());
+  // Qt's Windows exists() fast path observes the NTFS link entry itself.
+  // Follow its target explicitly to prove this is a real dangling symlink.
+  QVERIFY(!std::filesystem::exists(nativeLegacyPath, error));
+  QVERIFY2(!error, error.message().c_str());
+  QVERIFY(!QFile::exists(missingIdentity));
 
   const auto configurationFile = profile.filePath(QStringLiteral("settings.conf"));
   Settings::setSettingsFile(configurationFile);
@@ -186,6 +196,10 @@ void SettingsTests::certificateMigrationPreservesDanglingSymlink()
   QSettings persisted(configurationFile, QSettings::IniFormat);
   QCOMPARE(persisted.value(Settings::Security::Certificate).toString(), legacyPath);
   QVERIFY(QFileInfo(legacyPath).isSymLink());
+  QVERIFY(std::filesystem::read_symlink(nativeLegacyPath, error) == nativeTargetPath);
+  QVERIFY2(!error, error.message().c_str());
+  QVERIFY(!std::filesystem::exists(nativeLegacyPath, error));
+  QVERIFY2(!error, error.message().c_str());
   QVERIFY(!QFile::exists(Settings::defaultValue(Settings::Security::Certificate).toString()));
 }
 

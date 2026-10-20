@@ -18,6 +18,10 @@
 #include <QSignalSpy>
 #include <QTest>
 
+#ifdef Q_OS_WIN
+#include <qt_windows.h>
+#endif
+
 using namespace deskflow::shortcuts;
 
 void ShortcutRulesTests::initTestCase()
@@ -181,10 +185,22 @@ void ShortcutRulesTests::failedDiskWriteRestoresCommittedValue()
 {
   QVERIFY(save(defaults()));
   const auto previous = Settings::value(Settings::Client::ShortcutConfig);
+#ifdef Q_OS_WIN
+  // A Windows directory's read-only attribute does not prevent atomic writes.
+  // Allow reads/writes but deny replacement of the existing destination instead.
+  const auto nativePath = QDir::toNativeSeparators(Settings::settingsFile());
+  const auto destination = CreateFileW(
+      reinterpret_cast<LPCWSTR>(nativePath.utf16()), GENERIC_READ | GENERIC_WRITE,
+      FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr
+  );
+  QVERIFY(destination != INVALID_HANDLE_VALUE);
+  auto restore = qScopeGuard([destination] { CloseHandle(destination); });
+#else
   const auto directory = QFileInfo(Settings::settingsFile()).absolutePath();
   const auto permissions = QFileInfo(directory).permissions();
   QVERIFY(QFile::setPermissions(directory, QFileDevice::ReadOwner | QFileDevice::ExeOwner));
   const auto restore = qScopeGuard([directory, permissions] { QFile::setPermissions(directory, permissions); });
+#endif
   auto config = defaults(); config.enabled = false;
   QString error;
   QSignalSpy changes(Settings::instance(), &Settings::settingsChanged);
@@ -192,7 +208,12 @@ void ShortcutRulesTests::failedDiskWriteRestoresCommittedValue()
   QVERIFY(!error.isEmpty());
   QCOMPARE(Settings::value(Settings::Client::ShortcutConfig), previous);
   QCOMPARE(changes.count(), 0);
+#ifdef Q_OS_WIN
+  QVERIFY(CloseHandle(destination));
+  restore.dismiss();
+#else
   QVERIFY(QFile::setPermissions(directory, permissions));
+#endif
   QVERIFY2(save(config, &error), qPrintable(error));
   QVERIFY(load() == config);
 }
@@ -200,6 +221,7 @@ void ShortcutRulesTests::failedDiskWriteRestoresCommittedValue()
 void ShortcutRulesTests::conflictsUseEffectiveAppIntersection()
 {
   auto config = defaults();
+  config.habit = Habit::Custom; // Exercise stored rules independently of the host's native preset.
   config.apps = {QStringLiteral("com.openai.codex")};
   auto duplicate = config.rules.first();
   duplicate.id = QStringLiteral("duplicate");
@@ -269,7 +291,8 @@ void ShortcutRulesTests::displayKeys_data()
 void ShortcutRulesTests::displayKeys()
 {
   QFETCH(KeyID, key); QFETCH(KeyModifierMask, modifiers); QFETCH(QString, expected);
-  QCOMPARE(chordText({key, modifiers}), expected);
+  // These fixtures describe Mac glyphs; platformModifierLabels covers Win/Super too.
+  QCOMPARE(chordText({key, modifiers}, DeviceOS::MacOS), expected);
 }
 
 void ShortcutRulesTests::schemaOneMigratesWithoutWriting()
