@@ -111,6 +111,8 @@ try {
     $QtRoot = (Resolve-Path $QtRoot).Path
     $VcpkgRoot = (Resolve-Path $VcpkgRoot).Path
     $env:PATH = "$QtRoot/bin;$env:PATH"
+    # lupdate also loads Qt6Qml: detect an incomplete SDK before vcpkg builds.
+    Invoke-Checked (Join-Path $QtRoot 'bin/lupdate.exe') @('-version')
     New-Item -ItemType Directory -Force $BuildDirectory, $OutputDirectory | Out-Null
     $BuildDirectory = (Resolve-Path $BuildDirectory).Path
     $OutputDirectory = (Resolve-Path $OutputDirectory).Path
