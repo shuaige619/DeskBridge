@@ -12,11 +12,18 @@
 #include <QLocalServer>
 #include <QLocalSocket>
 
+#ifdef Q_OS_MACOS
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <unistd.h>
+#endif
+
 namespace deskflow::core::ipc {
 
-IpcServer::IpcServer(QObject *parent, const QString &serverName, const QString &typeName)
+IpcServer::IpcServer(QObject *parent, const QString &serverName, const QString &typeName, AccessPolicy accessPolicy)
     : QObject(parent),
       m_server{new QLocalServer(this)}, // NOSONAR - Qt memory
+      m_accessPolicy(accessPolicy),
       m_serverName(serverName),
       m_typeName(typeName.toUtf8())
 {
@@ -30,8 +37,10 @@ IpcServer::~IpcServer()
 
 void IpcServer::listen()
 {
-  // IPC server normally runs as system, but GUI runs as regular user, so we need to allow world access.
-  m_server->setSocketOptions(QLocalServer::WorldAccessOption);
+  // Desktop personal cores belong to the current user. Preserve the legacy
+  // system-service policy for daemon and upstream callers.
+  m_server->setSocketOptions(m_accessPolicy == AccessPolicy::SameUser ? QLocalServer::UserAccessOption
+                                                                    : QLocalServer::WorldAccessOption);
 
   connect(m_server, &QLocalServer::newConnection, this, &IpcServer::handleNewConnection);
   QLocalServer::removeServer(m_serverName);
@@ -42,11 +51,33 @@ void IpcServer::listen()
   }
 }
 
+bool IpcServer::peerIdentityAllowed(QLocalSocket *clientSocket) const
+{
+#ifdef Q_OS_MACOS
+  // QLocalServer socket permission options have no effect on macOS. Authenticate
+  // the accepted native socket before registering it or processing any bytes.
+  const auto descriptor = clientSocket->socketDescriptor();
+  uid_t user;
+  gid_t group;
+  return descriptor >= 0 && ::getpeereid(static_cast<int>(descriptor), &user, &group) == 0 && user == ::geteuid();
+#else
+  Q_UNUSED(clientSocket)
+  return true; // UserAccessOption enforces the Windows/Linux socket ACL.
+#endif
+}
+
 void IpcServer::handleNewConnection()
 {
   QLocalSocket *clientSocket = m_server->nextPendingConnection();
   if (!clientSocket) {
     LOG_ERR("%s ipc server failed to get new connection", m_typeName.constData());
+    return;
+  }
+
+  if (m_accessPolicy == AccessPolicy::SameUser && !peerIdentityAllowed(clientSocket)) {
+    LOG_WARN("%s ipc server rejected a connection without matching user identity", m_typeName.constData());
+    clientSocket->abort();
+    clientSocket->deleteLater();
     return;
   }
 

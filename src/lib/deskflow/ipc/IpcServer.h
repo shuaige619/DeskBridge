@@ -20,7 +20,9 @@ class IpcServer : public QObject
   Q_OBJECT
 
 public:
-  explicit IpcServer(QObject *parent, const QString &serverName, const QString &typeName);
+  enum class AccessPolicy { SystemWide, SameUser };
+  explicit IpcServer(QObject *parent, const QString &serverName, const QString &typeName,
+                     AccessPolicy accessPolicy = AccessPolicy::SystemWide);
   ~IpcServer() override;
 
   void listen();
@@ -34,6 +36,8 @@ Q_SIGNALS:
   void clearSettingsRequested();
 
 protected:
+  // The native peer check complements socket ACLs, which Qt ignores on macOS.
+  virtual bool peerIdentityAllowed(QLocalSocket *clientSocket) const;
   /**!
    * Write a message to the client socket and append a newline character.
    *
@@ -51,6 +55,7 @@ private:
   void handleErrorOccurred();
 
   QLocalServer *m_server;
+  AccessPolicy m_accessPolicy;
   QSet<QLocalSocket *> m_clients;
   QHash<QLocalSocket *, QByteArray> m_readBuffers;
   QString m_serverName;
