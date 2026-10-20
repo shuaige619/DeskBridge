@@ -13,6 +13,9 @@ jobs:
   windows-x64:
     runs-on: windows-2022
     timeout-minutes: 60
+    env:
+      # Only vcpkg's ABI-indexed dependency archives enter this directory.
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/build/vcpkg-binary-cache,readwrite
     steps:
       - uses: actions/checkout@v6
         with:
@@ -40,9 +43,16 @@ jobs:
           # manifest retains its independent, pinned dependency baseline.
           ref: 469a0504e4a6ebf6173d1c0f51a7fa34c382fd43
           path: deps/vcpkg
+      - name: Restore pinned dependency binary cache
+        id: dependency-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: build/vcpkg-binary-cache
+          key: deskbridge-vcpkg-469a0504-windows-2022-x64-windows-release-v1
       - name: Bootstrap vcpkg
         shell: pwsh
         run: |
+          New-Item -ItemType Directory -Force build/vcpkg-binary-cache | Out-Null
           & ./deps/vcpkg/bootstrap-vcpkg.bat -disableMetrics
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Install pinned installer compiler
@@ -62,6 +72,12 @@ jobs:
         shell: pwsh
         run: |
           ./deploy/windows/build-personal.ps1 -QtRoot $env:QT_ROOT_DIR -VcpkgRoot "$env:GITHUB_WORKSPACE/deps/vcpkg" -InnoSetupCompiler $env:INNO_COMPILER
+      - name: Save dependency archives even after a later build or test failure
+        if: always() && steps.dependency-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: build/vcpkg-binary-cache
+          key: deskbridge-vcpkg-469a0504-windows-2022-x64-windows-release-v1
       - name: Upload Windows packages
         uses: actions/upload-artifact@v7
         with:
