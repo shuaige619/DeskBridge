@@ -22,7 +22,7 @@ Windows 包由仓库中的手动 GitHub Actions 工作流构建。工作流会�
 
 使用 **Windows x64 MSVC developer PowerShell**，准备 Visual Studio 2022 C++ 工具及 Windows SDK、CMake 3.24+、Ninja、Git 和 Python 3.9+。依赖固定为：
 
-- Qt **6.11.2 / msvc2022_64**，含 `qtbase`、`qtsvg`、`qttools`、`qttranslations`。
+- Qt **6.11.2 / msvc2022_64**，含 `qtbase`、`qtsvg`、`qttools`、`qttranslations`，以及 `lupdate` 构建工具需要的 `qtdeclarative`。
 - vcpkg checkout **`469a0504e4a6ebf6173d1c0f51a7fa34c382fd43`**，先运行其 `bootstrap-vcpkg.bat`；个人版 manifest 使用同一 baseline，OpenSSL 为 **3.6.5**。
 - Inno Setup **6.7.3**：用于将检查后的 portable 内容制作成当前用户安装程序。
 
