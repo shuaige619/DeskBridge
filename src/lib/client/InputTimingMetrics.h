@@ -154,7 +154,7 @@ private:
       ++bins[static_cast<size_t>(bin)];
       ++count;
       totalNs += static_cast<double>(elapsedNs);
-      maxNs = std::max(maxNs, elapsedNs);
+      maxNs = (std::max)(maxNs, elapsedNs);
     }
 
     double percentileUpperUs(uint64_t percent) const
