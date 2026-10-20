@@ -14,20 +14,22 @@ Windows 包由仓库中的手动 GitHub Actions 工作流构建。工作流会�
 
 安装版使用独立的 DeskBridge 安装身份；重新安装会保留已有设置，卸载也会保留个人设置与证书。安装目录中的 `settings/DeskBridge.conf` 是桌面进程模式标记，GUI 与 core 共用同一位置的设置及 `settings/tls/` 信任数据。Portable 版也必须保留此标记。
 
+更新 Portable 版时，先退出应用，将新 ZIP 解压到新目录，再把旧目录中的整个 `settings/` 文件夹复制过去（包括 `settings/tls/`）。新 ZIP 自带空白配置标记，直接覆盖解压会覆盖已有配置。
+
 两种包均不包含 daemon，不安装系统服务；UAC 安全桌面和登录屏幕不在桌面进程模式的可用范围内。GUI/core 的单实例及本机 IPC 使用 `local.shuai.deskbridge` 身份，与原 Deskflow 隔离。首次连接需要正常核对与信任证书。窗口位置等 GUI 状态也可能写入当前用户的 DeskBridge 状态目录。
 
 ## 在 Windows 构建
 
-使用 **Windows x64 MSVC developer PowerShell**，准备 Visual Studio 2022 C++ 工具及 Windows SDK、CMake 3.24+、Ninja、Git。依赖固定为：
+使用 **Windows x64 MSVC developer PowerShell**，准备 Visual Studio 2022 C++ 工具及 Windows SDK、CMake 3.24+、Ninja、Git 和 Python 3.9+。依赖固定为：
 
-- Qt **6.11.3 / msvc2022_64**，含 `qtbase`、`qtsvg`、`qttools`、`qttranslations`。
-- vcpkg checkout **`d5ec528843d29e3a52d745a64b469f810b2cedbf`**，先运行其 `bootstrap-vcpkg.bat`；OpenSSL 使用同一 manifest baseline。
+- Qt **6.11.2 / msvc2022_64**，含 `qtbase`、`qtsvg`、`qttools`、`qttranslations`。
+- vcpkg checkout **`469a0504e4a6ebf6173d1c0f51a7fa34c382fd43`**，先运行其 `bootstrap-vcpkg.bat`；个人版 manifest 使用同一 baseline，OpenSSL 为 **3.6.5**。
 - Inno Setup **6.7.3**：用于将检查后的 portable 内容制作成当前用户安装程序。
 
 Qt 使用现成的 MSVC 包，保持 `VCPKG_QT=OFF`。在源码根目录执行：
 
 ```powershell
-./deploy/windows/build-personal.ps1 -QtRoot 'C:/Qt/6.11.3/msvc2022_64' -VcpkgRoot 'C:/src/vcpkg'
+./deploy/windows/build-personal.ps1 -QtRoot 'C:/Qt/6.11.2/msvc2022_64' -VcpkgRoot 'C:/src/vcpkg'
 ```
 
 Inno Setup 不在默认位置时增加 `-InnoSetupCompiler 'C:/path/ISCC.exe'`；只需 ZIP 时增加 `-PortableOnly`。默认包目录是 `dist/windows/`，构建目录是 `build/personal-windows-x64/`。输出目录已有同类包时拒绝覆盖，可用 `-OutputDirectory '新目录'` 指定另一个位置。`-SkipTests` 只跳过回归测试，仍检查包与版本；正式工作流不跳过测试。
@@ -35,6 +37,8 @@ Inno Setup 不在默认位置时增加 `-InnoSetupCompiler 'C:/path/ISCC.exe'`�
 脚本只运行选定的 mock、数据／状态、协议与 widget 测试，包括多屏布局、持久化回滚、客户端／服务端布局同步、快捷键、偏好与断线恢复。它不会运行原生输入注入／剪贴板测试。测试使用 `QT_QPA_PLATFORM=offscreen`，并为测试二进制临时创建独立的 `settings/DeskBridge.conf`，以隔离 Settings 首次初始化；测试结束后恢复环境并移除本次创建的标记。
 
 随后检查 ZIP 中的 GUI/core、portable 标记、Qt 平台插件、OpenSSL 与 VC runtime。版本 smoke 使用移除开发 Qt/vcpkg 路径后的 PATH；安装 smoke 使用构建目录里的临时安装位置，检查程序可运行、重装不覆盖设置、卸载删除程序但保留设置。
+
+两个包均包含 `ThirdPartyLicenses/`：从经过 SHA-256 校验的对应 Qt 模块源码中收集许可与归属文本，复制已安装 OpenSSL 包的许可证，并附微软官方 VC runtime 原始许可文档及纯文本。文件中的来源链接对应各组件版本。
 
 ## 手动托管构建
 

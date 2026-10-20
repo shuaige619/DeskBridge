@@ -2,6 +2,13 @@
 # SPDX-License-Identifier: MIT
 
 if(CPACK_GENERATOR MATCHES 7Z|ZIP)
+  if("@DESKBRIDGE_PERSONAL_BUILD@")
+    if(NOT EXISTS "@DESKBRIDGE_THIRD_PARTY_LICENSE_DIR@/THIRD-PARTY-NOTICES.md")
+      message(FATAL_ERROR "Prepare the exact runtime license texts before packaging DeskBridge")
+    endif()
+    file(COPY "@DESKBRIDGE_THIRD_PARTY_LICENSE_DIR@/"
+      DESTINATION "${CPACK_TEMPORARY_INSTALL_DIRECTORY}/ThirdPartyLicenses")
+  endif()
   string(REPLACE " " "*" _TEMP_LIST "@CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS@")
   set(${PORTABLE_LIBS} "")
   foreach(ITEM ${_TEMP_LIST})
@@ -14,6 +21,8 @@ if(CPACK_GENERATOR MATCHES 7Z|ZIP)
 " Portable @CMAKE_PROJECT_PROPER_NAME@: @CMAKE_PROJECT_VERSION@
 
   Keep settings/@CMAKE_PROJECT_PROPER_NAME@.conf beside the app to use portable settings and desktop mode.
+  To update, extract into a new folder and copy your existing settings folder while the app is closed.
+  ThirdPartyLicenses contains the exact Qt, OpenSSL and Microsoft runtime license texts.
   The portable version does not include the daemon, so the client will not work at UAC prompts or the login screen.
 ")
 endif()

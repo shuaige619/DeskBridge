@@ -23,7 +23,7 @@ if ([string]::IsNullOrWhiteSpace($QtRoot) -or -not (Test-Path "$QtRoot/bin/winde
 if ([string]::IsNullOrWhiteSpace($VcpkgRoot) -or -not (Test-Path "$VcpkgRoot/scripts/buildsystems/vcpkg.cmake")) {
     throw 'Pass -VcpkgRoot pointing to an existing bootstrapped vcpkg checkout.'
 }
-foreach ($tool in @('cl.exe', 'cmake', 'ninja', 'cpack')) {
+foreach ($tool in @('cl.exe', 'cmake', 'ninja', 'cpack', 'python')) {
     if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) { throw "Missing tool: $tool. Use an x64 MSVC developer shell." }
 }
 if ($env:VSCMD_ARG_TGT_ARCH -and $env:VSCMD_ARG_TGT_ARCH -ne 'x64') {
@@ -114,6 +114,7 @@ try {
     New-Item -ItemType Directory -Force $BuildDirectory, $OutputDirectory | Out-Null
     $BuildDirectory = (Resolve-Path $BuildDirectory).Path
     $OutputDirectory = (Resolve-Path $OutputDirectory).Path
+    $noticesDirectory = Join-Path $BuildDirectory 'ThirdPartyLicenses'
     if (Get-ChildItem $OutputDirectory -File | Where-Object { $_.Name -match '^deskbridge-.*(?:-portable\.zip|-setup\.exe)$' }) {
         throw 'Output directory already contains a DeskBridge package; choose a new -OutputDirectory.'
     }
@@ -124,6 +125,7 @@ try {
         "-DCMAKE_TOOLCHAIN_FILE=$VcpkgRoot/scripts/buildsystems/vcpkg.cmake",
         '-DVCPKG_TARGET_TRIPLET=x64-windows-release',
         "-DQt6_DIR=$QtRoot/lib/cmake/Qt6", "-DCMAKE_PREFIX_PATH=$QtRoot",
+        "-DDESKBRIDGE_THIRD_PARTY_LICENSE_DIR:PATH=$($noticesDirectory.Replace([char]92, [char]47))",
         "-DDEPLOYQT:FILEPATH=$QtRoot/bin/windeployqt.exe"
     )
     Invoke-Checked 'cmake' @('--build', $BuildDirectory, '--config', 'Release', '--parallel', '8')
@@ -131,6 +133,9 @@ try {
         # Mock/state/widget tests only; never native input/clipboard suites.
         Invoke-IsolatedTests $BuildDirectory
     }
+    Invoke-Checked 'python' @((Join-Path $PSScriptRoot 'prepare-notices.py'),
+        '--directory', $noticesDirectory,
+        '--openssl-prefix', (Join-Path $BuildDirectory 'vcpkg_installed/x64-windows-release'))
     # CPack stages the independent desktop payload; Inno wraps that verified ZIP below.
     Invoke-Checked 'cpack' @('--config', "$BuildDirectory/CPackConfig.cmake", '-G', 'ZIP', '-B', $OutputDirectory)
     $archives = @(Get-ChildItem $OutputDirectory -Filter 'deskbridge-*-portable.zip')
@@ -142,13 +147,19 @@ try {
         $entries = @($zip.Entries | ForEach-Object { $_.FullName.Replace([char]92, [char]47) })
         foreach ($required in @('/DeskBridge.exe', '/deskflow-core.exe', '/settings/DeskBridge.conf',
                                  '/Qt6Core.dll', '/Qt6Svg.dll', '/plugins/platforms/qwindows.dll',
-                                 '/vcruntime140.dll', '/msvcp140.dll')) {
+                                 '/vcruntime140.dll', '/msvcp140.dll',
+                                 '/ThirdPartyLicenses/THIRD-PARTY-NOTICES.md',
+                                 '/ThirdPartyLicenses/Qt-6.11.2/qtbase/LICENSES/LGPL-3.0-only.txt',
+                                 '/ThirdPartyLicenses/Microsoft-Visual-C-Runtime-2015-2022/LICENSE.txt')) {
             if (-not ($entries | Where-Object { "/$_".EndsWith($required, [StringComparison]::OrdinalIgnoreCase) })) {
                 throw "Portable archive is missing $required"
             }
         }
         if (-not ($entries -match '(^|/)libssl[^/]*\.dll$') -or -not ($entries -match '(^|/)libcrypto[^/]*\.dll$')) {
             throw 'Portable archive is missing OpenSSL runtime DLLs.'
+        }
+        if (-not ($entries -match '(^|/)ThirdPartyLicenses/OpenSSL-[0-9.]+/LICENSE\.txt$')) {
+            throw 'Portable archive is missing the installed OpenSSL license.'
         }
         if ($entries -match '(^|/)deskflow-daemon\.exe$|\.msi$') { throw 'Portable archive unexpectedly includes a service/installer.' }
     } finally { $zip.Dispose() }

@@ -99,6 +99,10 @@ endif()
 
 #generate vcpkg file if needed
 if(WIN32)
+    set(DESKFLOW_VCPKG_BASELINE "d5ec528843d29e3a52d745a64b469f810b2cedbf")
+    if(DESKBRIDGE_PERSONAL_BUILD)
+        set(DESKFLOW_VCPKG_BASELINE "469a0504e4a6ebf6173d1c0f51a7fa34c382fd43")
+    endif()
     if(VCPKG_QT)
         set(QT_LIBS ", \"qttranslations\", \"qtsvg\"")
     endif()

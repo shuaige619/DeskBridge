@@ -27,7 +27,7 @@ jobs:
         env:
           AQT_CONFIG: ${{ github.workspace }}/.github/actions/install-dependencies/aqt.ini
         with:
-          version: '6.11.3'
+          version: '6.11.2'
           arch: win64_msvc2022_64
           archives: qtbase qtsvg qttools qttranslations
           cache: true
@@ -36,7 +36,9 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: microsoft/vcpkg
-          ref: d5ec528843d29e3a52d745a64b469f810b2cedbf
+          # Current tool scripts avoid removed MSYS2 runtime packages. The
+          # manifest retains its independent, pinned dependency baseline.
+          ref: 469a0504e4a6ebf6173d1c0f51a7fa34c382fd43
           path: deps/vcpkg
       - name: Bootstrap vcpkg
         shell: pwsh
