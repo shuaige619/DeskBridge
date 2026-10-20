@@ -11,6 +11,7 @@
 class LogWidget;
 class QLabel;
 class QPushButton;
+class QTextDocument;
 class SearchWidget;
 
 class LogDock : public QDockWidget
@@ -19,6 +20,7 @@ class LogDock : public QDockWidget
 public:
   explicit LogDock(QWidget *parent = nullptr);
   void appendLine(const QString &msg);
+  QTextDocument *logDocument() const;
   void setFloating(bool floating);
 
 protected:

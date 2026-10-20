@@ -36,6 +36,9 @@ public:
 
   struct Client
   {
+    inline static const auto ShortcutConfig = QStringLiteral("client/shortcutConfig");
+    inline static const auto ClipboardShortcuts = QStringLiteral("client/clipboardShortcuts");
+    inline static const auto ClipboardShortcutApps = QStringLiteral("client/clipboardShortcutApps");
     inline static const auto DynamicConnectionRetry = QStringLiteral("client/dynamicConnectionInterval");
     inline static const auto InvertYScroll = QStringLiteral("client/invertYScroll");
     inline static const auto InvertXScroll = QStringLiteral("client/invertXScroll");
@@ -193,6 +196,8 @@ public:
   static void setStateFile(const QString &stateFile = QString());
   static void clearState();
   static void setValue(const QString &key = QString(), const QVariant &value = QVariant());
+  static bool trySetValue(const QString &key, const QVariant &value, QString *error = nullptr);
+  static bool trySetValues(const QVariantMap &values, QString *error = nullptr);
   static QVariant value(const QString &key = QString());
   static void restoreDefaultSettings();
   static QVariant defaultValue(const QString &key);
@@ -273,7 +278,10 @@ private:
   };
 
   inline static const QStringList m_validKeys = {
-      Client::DynamicConnectionRetry
+      Client::ShortcutConfig
+    , Client::ClipboardShortcuts
+    , Client::ClipboardShortcutApps
+    , Client::DynamicConnectionRetry
     , Client::InvertYScroll
     , Client::InvertXScroll
     , Client::LanguageSync
@@ -367,7 +375,8 @@ private:
 
   // When checking the default values this list contains the ones that default to true.
   inline static const QStringList m_defaultTrueValues = {
-      Core::UseHooks
+      Client::ClipboardShortcuts
+    , Core::UseHooks
     , Gui::CloseToTray
     , Gui::CloseReminder
     , Gui::LogExpanded

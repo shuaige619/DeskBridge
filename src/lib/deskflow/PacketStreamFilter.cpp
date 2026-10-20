@@ -8,8 +8,12 @@
 #include "deskflow/PacketStreamFilter.h"
 #include "base/IEventQueue.h"
 #include "deskflow/ProtocolTypes.h"
+#include "io/IOException.h"
 
+#include <array>
 #include <cstring>
+#include <limits>
+#include <vector>
 
 //
 // PacketStreamFilter
@@ -68,16 +72,29 @@ uint32_t PacketStreamFilter::read(void *buffer, uint32_t n)
 
 void PacketStreamFilter::write(const void *buffer, uint32_t count)
 {
-  // write the length of the payload
-  uint8_t length[4];
-  length[0] = (uint8_t)((count >> 24) & 0xff);
-  length[1] = (uint8_t)((count >> 16) & 0xff);
-  length[2] = (uint8_t)((count >> 8) & 0xff);
-  length[3] = (uint8_t)(count & 0xff);
-  getStream()->write(length, sizeof(length));
+  constexpr uint32_t headerSize = 4;
+  if (count > std::numeric_limits<uint32_t>::max() - headerSize) {
+    throw IOException("packet size exceeds stream write limit");
+  }
+  const uint32_t packetSize = headerSize + count;
 
-  // write the payload
-  getStream()->write(buffer, count);
+  // Keep mouse/control packets on the stack. Submit the header and payload
+  // together so the socket thread cannot wake and send just the header first.
+  std::array<uint8_t, 256> smallPacket;
+  std::vector<uint8_t> largePacket;
+  uint8_t *packet = smallPacket.data();
+  if (packetSize > smallPacket.size()) {
+    largePacket.resize(packetSize);
+    packet = largePacket.data();
+  }
+  packet[0] = static_cast<uint8_t>((count >> 24) & 0xff);
+  packet[1] = static_cast<uint8_t>((count >> 16) & 0xff);
+  packet[2] = static_cast<uint8_t>((count >> 8) & 0xff);
+  packet[3] = static_cast<uint8_t>(count & 0xff);
+  if (count != 0) {
+    std::memcpy(packet + headerSize, buffer, count);
+  }
+  getStream()->write(packet, packetSize);
 }
 
 void PacketStreamFilter::shutdownInput()

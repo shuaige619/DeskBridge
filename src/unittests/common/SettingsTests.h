@@ -7,6 +7,7 @@
 #include "common/Settings.h"
 
 #include <QTest>
+#include <QTemporaryDir>
 
 class SettingsTests : public QObject
 {
@@ -19,14 +20,20 @@ private Q_SLOTS:
   void settingsFile();
   void settingsPath();
   void tlsDir();
+  void certificatePathMigration_data();
+  void certificatePathMigration();
+  void certificateMigrationPreservesDanglingSymlink();
+  void certificateMigrationRejectsUnreadableConfiguration();
   void tlsTrustedServersDb();
   void tlsTrustedClientsDb();
   void checkValidSettings();
+  void checkClipboardShortcutPreferences();
   void checkCleanComputerName();
   void checkCleanComputerName_LongName();
   void checkClearState();
 
 private:
+  QTemporaryDir m_initialProfile;
   inline static const QString m_settingsPathTemp = QStringLiteral("tmp/test");
   inline static const QString m_settingsFile = QStringLiteral("%1/Deskflow.conf").arg(m_settingsPathTemp);
   inline static const QString m_stateFile = QStringLiteral("%1/Deskflow.state").arg(m_settingsPathTemp);

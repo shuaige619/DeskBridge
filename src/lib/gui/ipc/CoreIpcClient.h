@@ -20,6 +20,8 @@ public:
   explicit CoreIpcClient(QObject *parent = nullptr);
 
   void sendStop();
+  void sendLogLevel(const QString &level);
+  void sendLayoutCommand(const QString &command, const QString &args = {});
 
 Q_SIGNALS:
   void commandReceived(const QString &command, const QString &args);

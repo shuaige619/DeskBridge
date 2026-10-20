@@ -26,8 +26,15 @@ add_library(common STATIC
   LogLevel.h
   NetworkProtocol.h
   PlatformInfo.h
+  SourceDeviceOptions.h
   Settings.h
   Settings.cpp
+  ShortcutRules.h
+  ShortcutRules.cpp
+  ShortcutMapper.h
+  ShortcutMapper.cpp
+  ShiftTapGesture.h
+  ShiftTapGesture.cpp
   QSettingsProxy.cpp
   QSettingsProxy.h
   UrlConstants.h
@@ -36,6 +43,7 @@ add_library(common STATIC
 )
 
 target_link_libraries(common PUBLIC Qt6::Core)
+target_compile_definitions(common PUBLIC DESKBRIDGE_PERSONAL_BUILD=$<BOOL:${DESKBRIDGE_PERSONAL_BUILD}>)
 
 target_include_directories(common
   PUBLIC

@@ -10,10 +10,8 @@
 name: CI comment
 
 on:
-  workflow_run:
-    workflows: ["Continuous Integration"]
-    types:
-      - completed
+  # Upstream automation is retained for reference; personal releases use personal-windows.yml.
+  workflow_dispatch:
 
 jobs:
   summary:

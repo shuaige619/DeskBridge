@@ -1390,3 +1390,11 @@ public:
 };
 
 /** @} */ // end of protocol_structures group
+
+// DeskBridge layout extension; sent only after DSOP capability negotiation.
+extern const char *const kMsgQScreenLayout;
+extern const char *const kMsgDScreenLayout;
+
+// v2 topology JSON uses separate codes and cannot be confused with v1 pairs.
+extern const char *const kMsgQScreenLayoutV2;
+extern const char *const kMsgDScreenLayoutV2;

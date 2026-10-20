@@ -10,6 +10,8 @@
 
 #include "base/IEventQueue.h"
 #include "base/Log.h"
+#include "common/ShortcutRules.h"
+#include "common/Settings.h"
 #include "deskflow/AppUtil.h"
 #include "deskflow/Computer.h"
 #include "deskflow/DeskflowException.h"
@@ -33,6 +35,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <fstream>
+#include <stdexcept>
 
 using namespace deskflow::server;
 
@@ -123,6 +127,14 @@ Server::Server(ServerConfig &config, PrimaryClient *primaryClient, deskflow::Com
   // add connection
   addClient(m_primaryClient);
 
+  m_events->addHandler(EventTypes::ScreenLayoutCommand, this, [this](const auto &event) {
+    if (const auto *command = dynamic_cast<const deskflow::layout::Command *>(event.getDataObject()))
+      handleScreenLayoutCommand(*command);
+  });
+#if DESKBRIDGE_PERSONAL_BUILD
+  ipcSetLayoutTarget(m_events, this);
+#endif
+
   // set initial configuration
   setConfig(config);
 
@@ -152,6 +164,10 @@ Server::Server(ServerConfig &config, PrimaryClient *primaryClient, deskflow::Com
 
 Server::~Server()
 {
+  ipcClearLayoutTarget(this);
+  if (m_pendingLayout)
+    finishScreenLayout(false, QStringLiteral("服务端已停止，布局未更改。"));
+  m_events->removeHandler(EventTypes::ScreenLayoutCommand, this);
   // remove event handlers and timers
   using enum EventTypes;
   m_events->removeHandler(KeyStateKeyDown, m_inputFilter);
@@ -239,6 +255,7 @@ bool Server::setConfig(const ServerConfig &config)
     sendOptions(client);
   }
 
+  publishScreenLayout();
   return true;
 }
 
@@ -270,8 +287,16 @@ void Server::adoptClient(BaseClientProxy *client)
   ipcSendConnectionState(deskflow::core::ConnectionState::Connected);
   sendConnectedClientsIpc();
 
+  if (auto *proxy = dynamic_cast<ClientProxy *>(client)) {
+    m_events->addHandler(EventTypes::ScreenLayoutRequest, client->getEventTarget(), [this, proxy](const auto &event) {
+      if (const auto *command = dynamic_cast<const deskflow::layout::Command *>(event.getDataObject()))
+        handleScreenLayoutCommand(*command, proxy);
+    });
+  }
+
   // send configuration options to client
   sendOptions(client);
+  publishScreenLayout();
 
   // activate computer saver on new client if active on the primary computer
   if (m_activeSaver != nullptr) {
@@ -1073,6 +1098,15 @@ void Server::sendOptions(BaseClientProxy *client) const
     }
   }
 
+  // Only the independent personal build advertises this extension. Keep the
+  // existing DSOP framing so upstream peers can ignore the two unknown IDs.
+#if DESKBRIDGE_PERSONAL_BUILD
+  optionsList.insert(optionsList.end(), {kOptionDeskBridgeVersion, 1, kOptionDeskBridgeSourceOS,
+                                       static_cast<uint32_t>(deskflow::shortcuts::localOS())});
+  optionsList.insert(optionsList.end(), {kOptionDeskBridgeLayout, 2});
+  if (auto *proxy = dynamic_cast<ClientProxy *>(client))
+    proxy->setLayoutVersion(2);
+#endif
   // send the options
   client->resetOptions();
   client->setOptions(optionsList);
@@ -1929,7 +1963,14 @@ bool Server::removeClient(BaseClientProxy *client)
     return false;
   }
 
+  if (auto *proxy = dynamic_cast<ClientProxy *>(client)) proxy->setLayoutSubscribed(false);
+  const bool cancelledLayout = m_pendingLayout && m_pendingLayout->origin == client;
+  if (cancelledLayout) {
+    m_pendingLayout->origin = nullptr;
+    m_pendingLayout->requestId = 0;
+  }
   // remove event handlers
+  m_events->removeHandler(ScreenLayoutRequest, client->getEventTarget());
   m_events->removeHandler(ComputerShapeChanged, client->getEventTarget());
   m_events->removeHandler(ClipboardGrabbed, client->getEventTarget());
   m_events->removeHandler(ClipboardChanged, client->getEventTarget());
@@ -1937,7 +1978,10 @@ bool Server::removeClient(BaseClientProxy *client)
   // remove from list
   m_clients.erase(getName(client));
   m_clientSet.erase(i);
-
+  if (cancelledLayout)
+    finishScreenLayout(false, QStringLiteral("接收端已断开，布局未更改。"));
+  else
+    publishScreenLayout();
   return true;
 }
 
@@ -2061,4 +2105,195 @@ void Server::forceLeaveClient(const BaseClientProxy *client)
 
   // tell primary client about the active sides
   m_primaryClient->reconfigure(getActivePrimarySides());
+}
+
+deskflow::layout::Snapshot Server::screenLayout() const
+{
+  auto snapshot = m_config->screenLayout(m_primaryClient->getName());
+  for (const auto &[name, client] : m_clients) {
+    const auto canonical = QString::fromStdString(m_config->getCanonicalName(client->getName()));
+    if (!canonical.isEmpty() && !snapshot.connectedNames.contains(canonical)) snapshot.connectedNames.push_back(canonical);
+  }
+  snapshot.connectedNames.sort();
+  if (snapshot.editable && Settings::value(Settings::Server::ExternalConfig).toBool()) {
+    snapshot.editable = false;
+    snapshot.error = QStringLiteral("正在使用外部配置，请在服务端修改布局。");
+  } else if (snapshot.editable && !m_layoutControllerAvailable) {
+    snapshot.editable = false;
+    snapshot.error = QStringLiteral("请先打开服务端的 DeskBridge 窗口以调整布局。");
+  }
+  return snapshot;
+}
+
+void Server::publishScreenLayout()
+{
+  const auto snapshot = screenLayout();
+  ipcPublishScreenLayout(snapshot);
+  for (const auto &[name, client] : m_clients) {
+    if (auto *proxy = dynamic_cast<ClientProxy *>(client)) {
+      auto local = snapshot;
+      local.localName = QString::fromStdString(m_config->getCanonicalName(proxy->getName()));
+      proxy->sendScreenLayout(local);
+    }
+  }
+}
+
+void Server::replyScreenLayout(ClientProxy *origin, quint32 requestId, bool success, const QString &error)
+{
+  auto snapshot = screenLayout();
+  if (!error.isEmpty())
+    snapshot.error = error.left(deskflow::layout::kMaxErrorLength);
+  if (origin) {
+    snapshot.localName = QString::fromStdString(m_config->getCanonicalName(origin->getName()));
+    origin->sendScreenLayout(snapshot, requestId, success);
+  } else {
+    ipcSendToClient("layoutResult", deskflow::layout::encodeIpc(
+        {{"id", static_cast<double>(requestId)}, {"success", success}, {"error", snapshot.error}}));
+  }
+}
+
+void Server::handleScreenLayoutCommand(const deskflow::layout::Command &command, ClientProxy *origin)
+{
+  using namespace deskflow::layout;
+  if (command.kind == Command::Kind::Query) {
+    if (!origin) {
+      m_layoutControllerAvailable = command.controllerAvailable;
+      if (!m_layoutControllerAvailable && m_pendingLayout)
+        finishScreenLayout(false, QStringLiteral("服务端窗口已关闭，布局未更改。"));
+    }
+    publishScreenLayout();
+    if (!origin && command.id)
+      ipcSendToClient("layoutQueryResult", encodeIpc({{"id", static_cast<double>(command.id)},
+                                                     {"snapshot", toJson(screenLayout())}}));
+    return;
+  }
+  if (command.kind == Command::Kind::Complete) {
+    if (origin || !m_pendingLayout || command.id != m_pendingLayout->transactionId)
+      return;
+    QString error = command.error;
+    const bool success = command.success && reloadScreenLayout(error);
+    finishScreenLayout(success, error);
+    return;
+  }
+  const auto snapshot = screenLayout();
+  if (!command.id || !snapshot.editable ||
+      (origin && (!m_clientSet.contains(origin) || !m_config->isComputer(origin->getName())))) {
+    replyScreenLayout(origin, command.id, false, snapshot.error.isEmpty() ? QStringLiteral("此布局无法从首页调整。") : snapshot.error);
+    return;
+  }
+  if (m_pendingLayout) {
+    replyScreenLayout(origin, command.id, false, QStringLiteral("另一个布局更改正在保存，请稍后重试。"));
+    return;
+  }
+  Move move = command.move;
+  const bool legacy = command.kind == Command::Kind::Request;
+  if (legacy) {
+    if (snapshot.screens.size() != 2 || !validRequest(command.id, static_cast<quint32>(command.expected),
+        static_cast<quint32>(command.desired)) || snapshot.direction != command.expected) {
+      replyScreenLayout(origin, command.id, false, QStringLiteral("布局已变化，请按最新布局重试。"));
+      return;
+    }
+    const auto desired = command.desired;
+    move = {snapshot.clientName, desired == deskflow::layout::Direction::Left ? -1 : desired == deskflow::layout::Direction::Right ? 1 : 0,
+            desired == deskflow::layout::Direction::Above ? -1 : desired == deskflow::layout::Direction::Below ? 1 : 0, snapshot.revision};
+  } else if (command.kind != Command::Kind::Move) {
+    return;
+  }
+  QString error;
+  const auto desired = movedSnapshot(snapshot, move, &error);
+  if (!desired) {
+    replyScreenLayout(origin, command.id, false, error);
+    publishScreenLayout();
+    return;
+  }
+  if (desired->revision == snapshot.revision) {
+    replyScreenLayout(origin, command.id, true);
+    return;
+  }
+  if (++m_nextLayoutTransaction == 0) ++m_nextLayoutTransaction;
+  m_pendingLayout = PendingLayout{m_nextLayoutTransaction, command.id, snapshot, *desired, origin};
+  m_layoutTimer = m_events->newOneShotTimer(8.0, nullptr);
+  m_events->addHandler(EventTypes::Timer, m_layoutTimer, [this](const auto &) {
+    finishScreenLayout(false, QStringLiteral("服务端保存布局超时，布局未更改。"));
+  });
+  // The GUI sees the exact revision before it handles the persistence request.
+  publishScreenLayout();
+  if (legacy) {
+    ipcSendToClient("layoutRequestReceived", encodeIpc({{"id", static_cast<double>(m_nextLayoutTransaction)},
+        {"expected", static_cast<int>(command.expected)}, {"desired", static_cast<int>(command.desired)}}));
+  } else {
+    ipcSendToClient("layoutMoveReceived", encodeIpc({{"id", static_cast<double>(m_nextLayoutTransaction)},
+                                                   {"move", moveToJson(move)}}));
+  }
+}
+
+bool Server::reloadScreenLayout(QString &error)
+{
+  // Read into a temporary configuration. Failed reads never partially replace
+  // the live configuration; the entire pending topology revision must match.
+  if (!m_pendingLayout)
+    return false;
+  const auto current = screenLayout();
+  if (!current.editable || current.revision != m_pendingLayout->expectedSnapshot.revision) {
+    error = QStringLiteral("服务端布局已变化，请刷新后重试。");
+    return false;
+  }
+  Config previous(m_events);
+  previous = *m_config;
+  bool replaced = false;
+  try {
+    Config candidate(m_events);
+#if defined(Q_OS_WIN)
+    std::ifstream stream(Settings::serverConfigFile().toStdWString());
+#else
+    std::ifstream stream(Settings::serverConfigFile().toStdString());
+#endif
+    if (!stream.is_open()) {
+      error = QStringLiteral("无法读取已保存的屏幕布局。");
+      return false;
+    }
+    stream >> candidate;
+    const auto desired = candidate.screenLayout(m_primaryClient->getName());
+    if (!desired.editable || desired.revision != m_pendingLayout->desiredSnapshot.revision) {
+      error = QStringLiteral("已保存的配置与请求的屏幕布局不一致。");
+      return false;
+    }
+    *m_config = candidate;
+    replaced = true;
+    if (!setConfig(*m_config))
+      throw std::runtime_error("layout configuration was not accepted");
+    error.clear();
+    return true;
+  } catch (const std::exception &) {
+    if (replaced) {
+      // Never report a rejected edit while its routing remains active.
+      *m_config = previous;
+      try {
+        setConfig(*m_config);
+      } catch (const std::exception &) {
+        LOG_ERR("could not reconfigure platform after restoring screen layout");
+      }
+    }
+    error = QStringLiteral("无法加载已保存的屏幕布局。");
+    return false;
+  }
+}
+
+void Server::finishScreenLayout(bool success, const QString &error)
+{
+  if (!m_pendingLayout)
+    return;
+  const auto pending = *m_pendingLayout;
+  m_pendingLayout.reset();
+  if (m_layoutTimer) {
+    m_events->removeHandler(EventTypes::Timer, m_layoutTimer);
+    m_events->deleteTimer(m_layoutTimer);
+    m_layoutTimer = nullptr;
+  }
+  ipcSendToClient("layoutApplyFinished", deskflow::layout::encodeIpc(
+      {{"id", static_cast<double>(pending.transactionId)}, {"success", success},
+       {"error", error.left(deskflow::layout::kMaxErrorLength)}}));
+  if (pending.requestId)
+    replyScreenLayout(pending.origin, pending.requestId, success, error);
+  publishScreenLayout();
 }

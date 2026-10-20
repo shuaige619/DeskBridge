@@ -8,7 +8,10 @@
 
 #pragma once
 
+#include "client/InputTimingMetrics.h"
 #include "common/Enums.h"
+#include "common/ScreenLayout.h"
+#include "deskflow/ScreenLayoutProtocol.h"
 #include "deskflow/ClipboardChunk.h"
 #include "deskflow/ClipboardTypes.h"
 #include "deskflow/KeyTypes.h"
@@ -74,6 +77,8 @@ protected:
 private:
   // if compressing mouse motion then send the last motion now
   void flushCompressedMouse();
+  void submitMouseMove(int32_t x, int32_t y, bool relative, InputTimingMetrics::Sample sample);
+  void reportInputTiming();
 
   void sendInfo(const ClientInfo &);
 
@@ -90,6 +95,12 @@ private:
   void handleKeepAliveAlarm();
   void requestDisconnect(const char *message);
   void requestRefuseConnection(deskflow::core::ConnectionRefusal reason, const char *message);
+
+  void handleScreenLayoutCommand(const deskflow::layout::Command &command);
+  void receiveScreenLayout();
+  int m_layoutVersion = 0;
+  void receiveScreenLayoutV2();
+  deskflow::layout::Snapshot m_screenLayout;
 
   // message handlers
   void enter();
@@ -122,6 +133,9 @@ private:
   int32_t m_yMouse = 0;
   int32_t m_dxMouse = 0;
   int32_t m_dyMouse = 0;
+  InputTimingMetrics m_inputTiming;
+  InputTimingMetrics::Sample m_pendingMouseSample;
+  InputTimingMetrics::Sample m_pendingDwellSample;
 
   bool m_ignoreMouse = false;
 

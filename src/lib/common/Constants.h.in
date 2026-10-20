@@ -9,19 +9,18 @@
 
 const auto kAppName = "@CMAKE_PROJECT_PROPER_NAME@";
 const auto kAppId = "@CMAKE_PROJECT_NAME@";
+// Runtime ownership is separate from resource names and protocol compatibility.
+const auto kRuntimeId = "@DESKFLOW_RUNTIME_ID@";
 const auto kAppDescription = "@CMAKE_PROJECT_DESCRIPTION@";
 const auto kDaemonBinName = "@CMAKE_PROJECT_NAME@-daemon";
-const auto kDaemonIpcName = "@CMAKE_PROJECT_NAME@-daemon";
+const auto kDaemonIpcName = "@DESKFLOW_RUNTIME_ID@-daemon";
 const auto kRevFqdnName = "@CMAKE_PROJECT_REV_FQDN@";
-
-const auto kCopyright = //
-    "Copyright @CMAKE_PROJECT_COPYRIGHT@\n"
-    "Copyright (C) 2012-2025 Synergy App Ltd\n"
-    "Copyright (C) 2009-2012 Nick Bolton\n"
-    "Copyright (C) 2002-2009 Chris Schoeneman";
+// Bundled upstream artwork keeps its resource keys when the app is renamed.
+const auto kIconThemeId = "deskflow";
+const auto kAppIconName = "org.deskflow.deskflow";
 
 const auto kCoreBinName = "@CORE_BINARY@";
-const auto kCoreIpcName = "@CMAKE_PROJECT_NAME@-core";
+const auto kCoreIpcName = "@DESKFLOW_RUNTIME_ID@-core";
 
 const auto kServerGridHeight = 3;
 const auto kServerGridWidth = 5;

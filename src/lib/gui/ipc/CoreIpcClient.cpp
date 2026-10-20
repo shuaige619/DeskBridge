@@ -22,6 +22,16 @@ void CoreIpcClient::sendStop()
   sendMessage(QStringLiteral("stop"));
 }
 
+void CoreIpcClient::sendLogLevel(const QString &level)
+{
+  sendMessage(QStringLiteral("logLevel=%1").arg(level));
+}
+
+void CoreIpcClient::sendLayoutCommand(const QString &command, const QString &args)
+{
+  sendMessage(args.isEmpty() ? command : command + QStringLiteral("=") + args);
+}
+
 void CoreIpcClient::processCommand(const QString &command, const QStringList &parts)
 {
   const auto args = parts.size() >= 2 ? parts.at(1) : QString();

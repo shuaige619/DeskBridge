@@ -57,6 +57,11 @@ static const OptionID kOptionDefaultLockToComputerState = OPTION_CODE("LTSS");
 static const OptionID kOptionDisableLockToComputer = OPTION_CODE("DLTS");
 static const OptionID kOptionClipboardSharing = OPTION_CODE("CLPS");
 static const OptionID kOptionClipboardSharingSize = OPTION_CODE("CLSZ");
+// DeskBridge metadata travels in the existing option list. Upstream peers
+// ignore these unknown IDs, preserving the negotiated wire protocol version.
+static const OptionID kOptionDeskBridgeVersion = OPTION_CODE("DBVR");
+static const OptionID kOptionDeskBridgeSourceOS = OPTION_CODE("DBOS");
+static const OptionID kOptionDeskBridgeLayout = OPTION_CODE("DBLY");
 //@}
 
 //! @name Computer switch corner masks

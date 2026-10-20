@@ -11,6 +11,7 @@
 
 class QPlainTextEdit;
 class QTemporaryFile;
+class QTextDocument;
 
 class LogWidget : public QWidget
 {
@@ -18,6 +19,7 @@ class LogWidget : public QWidget
 public:
   explicit LogWidget(QWidget *parent = nullptr);
   void appendLine(const QString &msg);
+  QTextDocument *logDocument() const;
   void findNext(const QString &text);
   void findPrevious(const QString &text);
   void scrollToBottom() const;

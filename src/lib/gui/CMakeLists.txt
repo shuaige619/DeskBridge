@@ -10,6 +10,7 @@ if(APPLE)
   set (platform_sources
     OSXHelpers.h
     OSXHelpers.mm
+    personal/LoginStartupMac.mm
   )
 endif()
 
@@ -29,6 +30,35 @@ add_library(${target} STATIC
   Messages.cpp
   Messages.h
   StyleUtils.h
+  personal/PersonalWindow.cpp
+  personal/PersonalWindow.h
+  personal/AdvancedPage.cpp
+  personal/AdvancedPage.h
+  personal/PreferenceChanges.cpp
+  personal/PreferenceChanges.h
+  personal/PreferencesApplyController.cpp
+  personal/PreferencesApplyController.h
+  personal/PersonalStyle.cpp
+  personal/PersonalStyle.h
+  personal/DeviceIllustration.cpp
+  personal/DeviceIllustration.h
+  personal/ShortcutPage.cpp
+  personal/ShortcutPage.h
+  personal/RuleEditor.cpp
+  personal/RuleEditor.h
+  personal/ChordRecorder.cpp
+  personal/ChordRecorder.h
+  personal/ApplicationPicker.cpp
+  personal/ApplicationPicker.h
+  personal/ShortcutApplyController.cpp
+  personal/ShortcutApplyController.h
+  personal/ScreenLayoutPersistence.cpp
+  personal/ScreenLayoutPersistence.h
+  personal/ToggleSwitch.cpp
+  personal/ToggleSwitch.h
+  personal/LoginStartup.cpp
+  personal/LoginStartup.h
+  personal/LoginStartup_p.h
   TlsUtility.cpp
   TlsUtility.h
   VersionChecker.cpp
@@ -124,3 +154,9 @@ target_link_libraries(${target}
     net
     Qt6::Widgets
 )
+
+if(APPLE)
+  find_library(SERVICE_MANAGEMENT_LIBRARY ServiceManagement REQUIRED)
+  find_library(FOUNDATION_LIBRARY Foundation REQUIRED)
+  target_link_libraries(${target} PRIVATE ${SERVICE_MANAGEMENT_LIBRARY} ${FOUNDATION_LIBRARY})
+endif()

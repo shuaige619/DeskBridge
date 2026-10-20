@@ -29,6 +29,10 @@
 
 #include <X11/X.h>
 #include <X11/Xutil.h>
+#include <X11/Xatom.h>
+#include <QDir>
+#include <QFileInfo>
+#include <QSysInfo>
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
@@ -429,6 +433,63 @@ std::string XWindowsComputer::getSecureInputApp() const
 {
   // ignore on Linux
   return "";
+}
+
+std::string XWindowsComputer::getForegroundApplication() const
+{
+#if defined(Q_OS_LINUX)
+  // EWMH PIDs describe the X11 client's host. Do not interpret a remote display
+  // or a Wayland/XWayland session as processes in this machine's /proc tree.
+  if (m_display == nullptr || qEnvironmentVariable("XDG_SESSION_TYPE") == QLatin1String("wayland")) return {};
+  const QString display = QString::fromLocal8Bit(DisplayString(m_display));
+  if (!display.startsWith(QLatin1Char(':')) && !display.startsWith(QLatin1String("unix:"))) return {};
+  bool error = false;
+  unsigned long pid = 0;
+  {
+    XWindowsUtil::ErrorLock lock(m_display, &error);
+    const Atom activeAtom = XInternAtom(m_display, "_NET_ACTIVE_WINDOW", True);
+    const Atom pidAtom = XInternAtom(m_display, "_NET_WM_PID", True);
+    if (activeAtom == None || pidAtom == None) return {};
+    const auto readProperty = [this](Window window, Atom property, Atom expectedType, unsigned long &value) {
+      Atom type = None;
+      int format = 0;
+      unsigned long count = 0;
+      unsigned long remaining = 0;
+      unsigned char *data = nullptr;
+      const int status = XGetWindowProperty(m_display, window, property, 0, 1, False, expectedType,
+                                           &type, &format, &count, &remaining, &data);
+      const bool valid = status == Success && type == expectedType && format == 32 && count == 1 &&
+                         remaining == 0 && data != nullptr;
+      if (valid) value = *reinterpret_cast<unsigned long *>(data);
+      if (data != nullptr) XFree(data);
+      return valid;
+    };
+    unsigned long active = 0;
+    if (!readProperty(m_root, activeAtom, XA_WINDOW, active) || active == None ||
+        !readProperty(static_cast<Window>(active), pidAtom, XA_CARDINAL, pid) || pid == 0) return {};
+    Atom machineType = None;
+    int machineFormat = 0;
+    unsigned long machineLength = 0;
+    unsigned long machineRemaining = 0;
+    unsigned char *machine = nullptr;
+    const int machineStatus = XGetWindowProperty(m_display, static_cast<Window>(active), XA_WM_CLIENT_MACHINE,
+        0, 64, False, XA_STRING, &machineType, &machineFormat, &machineLength, &machineRemaining, &machine);
+    const bool validMachine = machineStatus == Success && machineType == XA_STRING && machineFormat == 8 &&
+                              machineLength > 0 && machineLength <= 255 && machineRemaining == 0 && machine != nullptr;
+    const QString host = validMachine ? QString::fromLatin1(reinterpret_cast<const char *>(machine), static_cast<int>(machineLength)) : QString();
+    if (machine != nullptr) XFree(machine);
+    const auto localHost = QSysInfo::machineHostName();
+    if (host.isEmpty() || localHost.isEmpty() ||
+        host.section(QLatin1Char('.'), 0, 0).compare(localHost.section(QLatin1Char('.'), 0, 0), Qt::CaseInsensitive) != 0)
+      return {};
+  }
+  if (error) return {};
+  const QString executable = QFileInfo(QStringLiteral("/proc/%1/exe").arg(pid)).canonicalFilePath();
+  if (executable.isEmpty() || !QDir::isAbsolutePath(executable)) return {};
+  return QDir::cleanPath(executable).toUtf8().toStdString();
+#else
+  return {};
+#endif
 }
 
 void *XWindowsComputer::getEventTarget() const

@@ -26,6 +26,10 @@ comptuers.
 class IPlatformComputer : public IComputer, public IPrimaryComputer, public ISecondaryComputer, public IKeyState
 {
 public:
+  // A local application identity, used only for candidate remote shortcuts.
+  // Unavailable focus information never widens an application's scope.
+  virtual std::string getForegroundApplication() const { return {}; }
+
   //! @name manipulators
   //@{
 

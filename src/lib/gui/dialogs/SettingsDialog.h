@@ -8,10 +8,12 @@
 
 #pragma once
 #include <QDialog>
+#include <QStringList>
 
 #include "gui/config/ServerConfig.h"
 
 class SettingsDialogButtonBox;
+class QTextDocument;
 
 namespace Ui {
 class SettingsDialog;
@@ -23,11 +25,12 @@ class SettingsDialog : public QDialog
 
 public:
   void extracted();
-  SettingsDialog(QWidget *parent, const ServerConfig &serverConfig);
+  SettingsDialog(QWidget *parent, const ServerConfig &serverConfig, QTextDocument *logDocument = nullptr);
   ~SettingsDialog() override;
 
 Q_SIGNALS:
   void requestRemoveAllSettings();
+  void fingerprintRequested();
 
 protected:
   void changeEvent(QEvent *e) override;
@@ -37,6 +40,8 @@ private:
   void regenCertificates();
   void browseCertificatePath();
   void browseLogPath();
+  void showLog();
+  void copyLog() const;
   void setLogToFile(bool logToFile);
   void accept() override;
   bool isClientMode() const;
@@ -44,6 +49,8 @@ private:
   void updateTlsControlsEnabled();
   void resetAllSettings();
   void updateText();
+  QStringList clipboardShortcutApps() const;
+  void setClipboardShortcutApps(const QStringList &apps);
 
   /// @brief Load all settings.
   void loadFromConfig();
@@ -84,7 +91,9 @@ private:
   void setButtonBoxEnabledButtons() const;
 
   bool m_interfaceSetOnLoad = false;
+  QStringList m_clipboardShortcutApps;
   std::unique_ptr<Ui::SettingsDialog> ui;
   const ServerConfig &m_serverConfig;
+  QTextDocument *m_logDocument = nullptr;
   SettingsDialogButtonBox *m_buttonBox = nullptr;
 };

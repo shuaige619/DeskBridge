@@ -17,6 +17,8 @@
 #include <QRect>
 #include <QRegularExpression>
 #include <QStandardPaths>
+#include <filesystem>
+#include <system_error>
 
 Settings *Settings::instance()
 {
@@ -70,14 +72,14 @@ void Settings::clearState()
 Settings::Settings(QObject *parent) : QObject(parent), m_settingsWatcher{new QFileSystemWatcher(this)}
 {
   QString fileToLoad;
-#ifdef Q_OS_WIN
-  const auto portableFile = portableSettingsFile();
-  qDebug().noquote() << "checking for portable settings file at:" << portableFile;
-  if (QFile(portableFile).exists())
-    fileToLoad = portableFile;
-#else
+  // Honor an explicitly isolated profile before consulting platform defaults.
+  // In particular, Windows tests must not migrate a user's real configuration
+  // while initializing the singleton before setSettingsFile() takes effect.
   if (const auto xdgConfigHome = qEnvironmentVariable("XDG_CONFIG_HOME"); !xdgConfigHome.isEmpty())
     fileToLoad = QStringLiteral("%1/%2/%2.conf").arg(xdgConfigHome, kAppName);
+#ifdef Q_OS_WIN
+  else if (const auto portableFile = portableSettingsFile(); QFile(portableFile).exists())
+    fileToLoad = portableFile;
 #endif
   else if (QFile(UserSettingFile).exists())
     fileToLoad = UserSettingFile;
@@ -110,10 +112,35 @@ Settings::Settings(QObject *parent) : QObject(parent), m_settingsWatcher{new QFi
 
 void Settings::upgradeSettings()
 {
+  const auto existingKeys = m_settings->allKeys(); // Force lazy INI parsing before considering a migration.
+  if (m_settings->status() != QSettings::NoError)
+    return;
+  const auto certificateName = QString::fromUtf8(kAppName).toLower();
+  if (certificateName != QString::fromUtf8(kAppId).toLower() && !m_settings->contains(Security::Certificate)) {
+    // Pin an older implicit identity once during migration. Defaults must not
+    // change identity later just because a certificate file appears or vanishes.
+    // This also runs in the constructor, so do not call instance()/tlsDir() here.
+    auto certificateDirectory = QFileInfo(m_settings->fileName()).absolutePath();
+#ifdef Q_OS_WIN
+    if (!QFile(portableSettingsFile()).exists())
+      certificateDirectory = SystemDir;
+#endif
+    certificateDirectory += QStringLiteral("/tls");
+    const auto legacyPath = QStringLiteral("%1/%2.pem").arg(certificateDirectory, kAppId);
+    const auto brandedPath = QStringLiteral("%1/%2.pem").arg(certificateDirectory, certificateName);
+    std::error_code lookupError;
+    const auto legacyStatus = std::filesystem::symlink_status(QFile(legacyPath).filesystemFileName(), lookupError);
+    const bool keepLegacy = std::filesystem::exists(legacyStatus) ||
+                            (lookupError && lookupError != std::errc::no_such_file_or_directory);
+    m_settings->setValue(Security::Certificate, keepLegacy ? legacyPath : brandedPath);
+    // The proxy uses the same QSettings backend and sees the complete persisted
+    // selection without reloading or generating/replacing either identity file.
+    m_settings->sync();
+  }
   if (const auto logValue = m_settings->value(Settings::Log::Level).toString();
       !LogLevel::logLevelOptions().contains(logValue, Qt::CaseInsensitive))
     m_settings->setValue(Settings::Log::Level, defaultValue(Settings::Log::Level));
-  const auto screenKeys = m_settings->allKeys().filter("screen_");
+  const auto screenKeys = existingKeys.filter("screen_");
   for (const auto &key : screenKeys) {
     auto newKey = key;
     newKey.replace("screen_", "computer_");
@@ -241,6 +268,8 @@ void Settings::upgradeSettings()
 
 void Settings::cleanSettings()
 {
+  if (m_settings->status() != QSettings::NoError)
+    return;
   const QStringList keys = m_settings->allKeys();
   for (const QString &key : keys) {
     if (m_oldServerConfigKeys.contains(key) || key.startsWith("screen_"))
@@ -267,6 +296,8 @@ void Settings::cleanStateSettings()
 
 void Settings::setupComputerName()
 {
+  if (m_settings->status() != QSettings::NoError)
+    return;
   if (m_settings->value(Settings::Core::ComputerName).toString().isEmpty())
     m_settings->setValue(Settings::Core::ComputerName, cleanComputerName(QSysInfo::machineHostName()));
 }
@@ -308,6 +339,8 @@ void Settings::checkIfSettingsWritableChange()
 
 QVariant Settings::defaultValue(const QString &key)
 {
+  if (key == Client::ShortcutConfig)
+    return QString();
   if (key.startsWith(QStringLiteral("computer_"))) {
     const auto computerKey = key.mid(key.indexOf('/') + 1);
     return computerDefaults(computerKey);
@@ -316,17 +349,39 @@ QVariant Settings::defaultValue(const QString &key)
   if (m_defaultFalseValues.contains(key))
     return false;
 
+  if (key == Gui::AutoUpdateCheck && QString::fromUtf8(kRuntimeId) != QString::fromUtf8(kAppId))
+    return false;
+
   if (m_defaultTrueValues.contains(key))
     return true;
 
-  if (key == Security::Certificate)
-    return QStringLiteral("%1/%2.pem").arg(Settings::tlsDir(), kAppId);
+  if (key == Client::ClipboardShortcutApps) {
+#ifdef Q_OS_MACOS
+    return QStringList{QStringLiteral("com.openai.codex"), QStringLiteral("com.electron.lark")};
+#else
+    return QStringList{};
+#endif
+  }
+
+  if (key == Security::Certificate) {
+    const auto certificateName = instance()->m_settings->status() == QSettings::NoError
+                                     ? QString::fromUtf8(kAppName).toLower()
+                                     : QString::fromUtf8(kAppId);
+    return QStringLiteral("%1/%2.pem").arg(Settings::tlsDir(), certificateName);
+  }
 
   if (key == Security::KeySize)
     return 2048;
 
-  if (key == Log::File)
+  if (key == Log::File) {
+    if (QString::fromUtf8(kRuntimeId) != QString::fromUtf8(kAppId))
+      return QStringLiteral("%1/%2.log").arg(Settings::settingsPath(), QString::fromUtf8(kAppName).toLower());
+#ifdef Q_OS_MACOS
+    return QStringLiteral("%1/%2.log").arg(Settings::settingsPath(), QString::fromUtf8(kAppName).toLower());
+#else
     return QStringLiteral("%1/%2.log").arg(QDir::homePath(), kAppId);
+#endif
+  }
 
   if (key == Log::Level)
     return QVariant::fromValue(LogLevel::Level::Info).toString();
@@ -487,6 +542,131 @@ QVariant Settings::value(const QString &key)
   const bool useState = Settings::m_stateKeys.contains(key) && !instance()->isPortableMode();
   auto settings = useState ? instance()->m_stateSettings : instance()->m_settings;
   return settings->value(key, defaultValue(key));
+}
+
+bool Settings::trySetValue(const QString &key, const QVariant &value, QString *error)
+{
+  if (error)
+    error->clear();
+  const bool useState = Settings::m_stateKeys.contains(key) && !instance()->isPortableMode();
+  auto *backend = useState ? instance()->m_stateSettings : instance()->m_settings;
+  // QSettings retains its first error for its lifetime. A fresh transaction
+  // allows a later retry after a failed write, without resetting global state.
+  QSettings transaction(backend->fileName(), backend->format());
+  auto *settings = &transaction;
+  if (!settings->isWritable()) {
+    if (error)
+      *error = QStringLiteral("配置文件不可写，原配置已保留。");
+    return false;
+  }
+  const bool existed = settings->contains(key);
+  const QVariant previous = settings->value(key);
+  if (previous == value)
+    return true;
+
+  // QSettings uses an atomic file replacement. Require it rather than allowing
+  // a non-atomic fallback, and publish the settingsChanged signal only on success.
+  settings->setAtomicSyncRequired(true);
+  settings->setValue(key, value);
+  settings->sync();
+  if (settings->status() != QSettings::NoError) {
+    if (existed)
+      settings->setValue(key, previous);
+    else
+      settings->remove(key);
+    settings->sync();
+    if (error)
+      *error = QStringLiteral("无法保存配置，已恢复原配置。");
+    return false;
+  }
+  Q_EMIT instance()->settingsChanged(key);
+  return true;
+}
+
+bool Settings::trySetValues(const QVariantMap &values, QString *error)
+{
+  if (error)
+    error->clear();
+  if (values.isEmpty())
+    return true;
+
+  const bool portable = isPortableMode();
+  const bool useState = m_stateKeys.contains(values.firstKey()) && !portable;
+  for (auto it = values.cbegin(); it != values.cend(); ++it) {
+    if (it.key().isEmpty() || (m_stateKeys.contains(it.key()) && !portable) != useState) {
+      if (error)
+        *error = QStringLiteral("一次保存只能修改同一个配置文件，原配置已保留。");
+      return false;
+    }
+  }
+
+  auto *backend = useState ? instance()->m_stateSettings : instance()->m_settings;
+  // A fresh QSettings avoids carrying a previous transaction's error status.
+  QSettings transaction(backend->fileName(), backend->format());
+  transaction.setAtomicSyncRequired(true);
+  if (!transaction.isWritable()) {
+    if (error)
+      *error = QStringLiteral("配置文件不可写，原配置已保留。");
+    return false;
+  }
+  transaction.sync();
+  if (transaction.status() != QSettings::NoError) {
+    if (error)
+      *error = QStringLiteral("无法读取或同步配置，原配置已保留。");
+    return false;
+  }
+
+  QVariantMap previous;
+  QVariantMap requested;
+  QStringList absentKeys;
+  QStringList changedKeys;
+  for (auto it = values.cbegin(); it != values.cend(); ++it) {
+    auto candidate = it.value();
+    if (it.key() == Core::ComputerName && candidate.isValid())
+      candidate = cleanComputerName(candidate.toString());
+    const auto effective = candidate.isValid() ? candidate : defaultValue(it.key());
+    const bool effectiveChanged = transaction.value(it.key(), defaultValue(it.key())) != effective;
+    // Invalid QVariant means restore absence, including an explicit default whose
+    // removal changes storage but does not change the effective preference.
+    if (!effectiveChanged && (candidate.isValid() || !transaction.contains(it.key())))
+      continue;
+    previous.insert(it.key(), transaction.value(it.key()));
+    if (!transaction.contains(it.key()))
+      absentKeys.append(it.key());
+    requested.insert(it.key(), candidate);
+    if (effectiveChanged)
+      changedKeys.append(it.key());
+  }
+  if (requested.isEmpty())
+    return true;
+
+  for (auto it = requested.cbegin(); it != requested.cend(); ++it) {
+    if (it.value().isValid())
+      transaction.setValue(it.key(), it.value());
+    else
+      transaction.remove(it.key());
+  }
+  // All requested keys reach the INI file through one atomic replacement.
+  transaction.sync();
+  if (transaction.status() != QSettings::NoError) {
+    // QSettings instances for the same file share their in-memory cache. Restore
+    // it as well as the pending write, including keys which did not exist before.
+    for (auto it = previous.cbegin(); it != previous.cend(); ++it) {
+      if (absentKeys.contains(it.key()))
+        transaction.remove(it.key());
+      else
+        transaction.setValue(it.key(), it.value());
+    }
+    transaction.sync();
+    if (error)
+      *error = QStringLiteral("无法保存配置，已保留全部原配置。");
+    return false;
+  }
+
+  // Observers can read the complete new configuration from the very first signal.
+  for (const auto &key : changedKeys)
+    Q_EMIT instance()->settingsChanged(key);
+  return true;
 }
 
 void Settings::restoreDefaultSettings()

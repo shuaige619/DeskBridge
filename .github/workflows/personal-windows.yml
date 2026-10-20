@@ -1,0 +1,83 @@
+# SPDX-FileCopyrightText: (C) 2026 DeskBridge contributors
+# SPDX-License-Identifier: MIT
+name: DeskBridge Windows x64 packages
+
+# Build on demand; the release owner attaches the verified files to a Release.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-x64:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Set up MSVC x64
+        uses: TheMrMilchmann/setup-msvc-dev@v4
+        with:
+          arch: amd64
+          spectre: true
+      - name: Install pinned Qt
+        uses: jurplel/install-qt-action@v4
+        env:
+          AQT_CONFIG: ${{ github.workspace }}/.github/actions/install-dependencies/aqt.ini
+        with:
+          version: '6.11.3'
+          arch: win64_msvc2022_64
+          archives: qtbase qtsvg qttools qttranslations
+          cache: true
+          aqtsource: git+https://github.com/miurahr/aqtinstall.git@16db45a70b5905ad596941b223469bc86a56901e
+      - name: Fetch pinned vcpkg
+        uses: actions/checkout@v6
+        with:
+          repository: microsoft/vcpkg
+          ref: d5ec528843d29e3a52d745a64b469f810b2cedbf
+          path: deps/vcpkg
+      - name: Bootstrap vcpkg
+        shell: pwsh
+        run: |
+          & ./deps/vcpkg/bootstrap-vcpkg.bat -disableMetrics
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Install pinned installer compiler
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $download = Join-Path $env:RUNNER_TEMP 'innosetup-6.7.3.exe'
+          Invoke-WebRequest 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe' -OutFile $download
+          if ((Get-FileHash $download -Algorithm SHA256).Hash.ToLowerInvariant() -ne '9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732') {
+              throw 'Installer compiler checksum mismatch.'
+          }
+          $destination = Join-Path $env:RUNNER_TEMP 'InnoSetup'
+          $setup = Start-Process $download -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', "/DIR=`"$destination`"") -Wait -PassThru
+          if ($setup.ExitCode -ne 0) { throw "Installer compiler setup failed: $($setup.ExitCode)" }
+          "INNO_COMPILER=$destination/ISCC.exe" >> $env:GITHUB_ENV
+      - name: Build, test and verify installer plus portable archive
+        shell: pwsh
+        run: |
+          ./deploy/windows/build-personal.ps1 -QtRoot $env:QT_ROOT_DIR -VcpkgRoot "$env:GITHUB_WORKSPACE/deps/vcpkg" -InnoSetupCompiler $env:INNO_COMPILER
+      - name: Upload Windows packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: deskbridge-windows-x64
+          path: |
+            dist/windows/deskbridge-*-setup.exe
+            dist/windows/deskbridge-*-portable.zip
+            dist/windows/SHA256SUMS-windows.txt
+          if-no-files-found: error
+          retention-days: 30
+      - name: Preserve failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: deskbridge-windows-x64-diagnostics
+          path: |
+            build/personal-windows-x64/Testing/Temporary/
+            build/personal-windows-x64/src/unittests/Testing/Temporary/
+            build/personal-windows-x64/installer-smoke.log
+          if-no-files-found: ignore
+          retention-days: 14

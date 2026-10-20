@@ -13,6 +13,7 @@
 #include "base/Event.h"
 #include "base/EventTypes.h"
 #include "common/Enums.h"
+#include "common/ShortcutRules.h"
 #include "deskflow/IClipboard.h"
 #include "net/NetworkAddress.h"
 
@@ -188,6 +189,7 @@ public:
   void screensaver(bool activate) override;
   void resetOptions() override;
   void setOptions(const OptionsList &options) override;
+  void setSourceOperatingSystem(deskflow::shortcuts::DeviceOS os);
   std::string getName() const override;
 
 private:

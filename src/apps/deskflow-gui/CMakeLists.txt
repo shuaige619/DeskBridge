@@ -2,11 +2,7 @@
 # SPDX-FileCopyrightText: (C) 2024 Symless Ltd
 # SPDX-License-Identifier: MIT
 
-if(APPLE)
-  set(target Deskflow)
-else()
-  set(target deskflow)
-endif()
+set(target ${DESKFLOW_GUI_TARGET})
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
@@ -21,9 +17,12 @@ elseif(BUILD_OSX_BUNDLE)
   set(BUNDLE_BUNDLE_NAME "${target}")
   set(BUNDLE_DISPLAY_NAME "${target}")
   set(BUNDLE_GUI_IDENTIFIER "${CMAKE_PROJECT_REV_FQDN}")
-  set(BUNDLE_ICON_FILE ${target}.icns)
+  if(DESKBRIDGE_PERSONAL_BUILD)
+    set(BUNDLE_ICON_FILE DeskBridge.icns)
+  else()
+    set(BUNDLE_ICON_FILE Deskflow.icns)
+  endif()
   set(BUNDLE_INFO_STRING "${CMAKE_PROJECT_DESCRIPTION}")
-  set(BUNDLE_COPYRIGHT "${CMAKE_PROJECT_COPYRIGHT}")
 
   configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/../res/deskflow.plist.in
@@ -31,7 +30,7 @@ elseif(BUILD_OSX_BUNDLE)
     @ONLY
   )
 
-  set(platform_extra ../res/Deskflow.icns)
+  set(platform_extra ../res/${BUNDLE_ICON_FILE})
   set_source_files_properties(${platform_extra} PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
 endif()
 
@@ -40,6 +39,10 @@ add_executable(${target} WIN32 MACOSX_BUNDLE
   ../res/deskflow.qrc
   deskflow-gui.cpp
 )
+
+if(DESKBRIDGE_PERSONAL_BUILD)
+  target_sources(${target} PRIVATE ../res/deskbridge.qrc)
+endif()
 
 target_link_libraries(
   ${target}

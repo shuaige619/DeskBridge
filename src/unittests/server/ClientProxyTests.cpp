@@ -8,6 +8,7 @@
 
 #include "../deskflow/MockEventQueue.h"
 #include "deskflow/AppUtil.h"
+#include "deskflow/ScreenLayoutProtocol.h"
 #include "io/IStream.h"
 #include "server/ClientProxy1_0.h"
 #include "server/ClientProxy1_1.h"
@@ -16,6 +17,8 @@
 #include "server/ClientProxy1_8.h"
 
 #include <memory>
+#include <cstring>
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -62,9 +65,13 @@ public:
   {
   }
 
-  uint32_t read(void *, uint32_t) override
+  void push(const QByteArray &bytes) { m_input.append(bytes); }
+  uint32_t read(void *destination, uint32_t requested) override
   {
-    return 0;
+    const auto size = std::min<qsizetype>(m_input.size(), requested);
+    if (destination && size) std::memcpy(destination, m_input.constData(), size);
+    m_input.remove(0, size);
+    return static_cast<uint32_t>(size);
   }
 
   void flush() override
@@ -96,6 +103,22 @@ public:
 
 private:
   QByteArray m_buffer;
+  QByteArray m_input;
+};
+
+class LayoutParsingProxy : public ClientProxy1_0
+{
+public:
+  using ClientProxy1_0::ClientProxy1_0;
+  bool parseCode(const char *code) { return parseMessage(reinterpret_cast<const uint8_t *>(code)); }
+};
+
+class LayoutRequestQueue : public MockEventQueue
+{
+public:
+  ~LayoutRequestQueue() override { for (const auto &event : events) Event::deleteData(event); }
+  void addEvent(Event &&event) override { events.push_back(std::move(event)); }
+  std::vector<Event> events;
 };
 
 std::unique_ptr<ClientProxy> makeProxy(int minor, deskflow::IStream *stream, IEventQueue *events)
@@ -223,3 +246,86 @@ void ClientProxyTests::keyUp()
 }
 
 QTEST_MAIN(ClientProxyTests)
+
+void ClientProxyTests::screenLayout_requiresNegotiationAndUsesConnectedAlias()
+{
+  ProxyUnderTest test(0);
+  const deskflow::layout::Snapshot snapshot{"source", "canonical-client", deskflow::layout::Direction::Above, true, {}};
+  test.proxy->sendScreenLayout(snapshot, 23, true);
+  QVERIFY(test.stream->take().isEmpty());
+  test.proxy->setLayoutAdvertised(true);
+  test.proxy->sendScreenLayout(snapshot, 23, true);
+  QVERIFY(test.stream->take().isEmpty());
+  test.proxy->setLayoutSubscribed(true);
+  test.proxy->sendScreenLayout(snapshot, 23, true);
+  const auto expected = QByteArray("DLAY") + QByteArray::fromHex("00000003 00000001 00000017 00000001 00000006") +
+                        "source" + QByteArray::fromHex("00000006") + "client" + QByteArray::fromHex("00000000");
+  QCOMPARE(test.stream->take(), expected);
+  test.proxy->setLayoutSubscribed(false);
+  test.proxy->sendScreenLayout(snapshot);
+  QVERIFY(test.stream->take().isEmpty());
+}
+
+void ClientProxyTests::screenTopology_threePeersReceiveSameGraphWithOwnIdentity()
+{
+  using namespace deskflow::layout;
+  Snapshot topology{"source", {}, deskflow::layout::Direction::Unknown, true, {}};
+  topology.screens = {{"source", 0, 0}, {"one", 1, 0}, {"two", 1, 1}, {"three", 0, 1}};
+  topology.protocolVersion = 2;
+  topology.connectedNames = {"source", "one", "two", "three"};
+  topology.revision = revisionFor(topology);
+  for (const auto *name : {"one", "two", "three"}) {
+    MockEventQueue events;
+    auto *stream = new CapturingStream;
+    LayoutParsingProxy proxy(name, stream, &events);
+    stream->take();
+    proxy.setLayoutVersion(2);
+    proxy.sendScreenLayout(topology);
+    QVERIFY(stream->take().isEmpty()); // No custom frames before subscription.
+    proxy.setLayoutSubscribed(true);
+    topology.localName = name;
+    proxy.sendScreenLayout(topology);
+    const auto bytes = stream->take();
+    QCOMPARE(bytes.left(4), QByteArray("DLY2"));
+    const auto object = QJsonDocument::fromJson(bytes.mid(8)).object();
+    const auto decoded = snapshotFromJson(object.value("snapshot").toObject());
+    QVERIFY(decoded);
+    QCOMPARE(decoded->screens, topology.screens);
+    QCOMPARE(decoded->localName, QString::fromLatin1(name));
+    QCOMPARE(decoded->connectedNames, topology.connectedNames);
+    QCOMPARE(decoded->revision, topology.revision);
+  }
+}
+
+void ClientProxyTests::screenTopology_requestsAreNegotiatedAndBounded()
+{
+  using namespace deskflow::layout;
+  LayoutRequestQueue events;
+  auto *stream = new CapturingStream;
+  LayoutParsingProxy proxy("one", stream, &events);
+  stream->take();
+  const Move move{"three", -1, 0, QString(64, u'a')};
+  CapturingStream outgoing;
+  writeWireObject(&outgoing, kMsgQScreenLayoutV2,
+      {{"kind", QStringLiteral("move")}, {"id", 123}, {"move", moveToJson(move)}});
+  stream->push(outgoing.take().mid(4));
+  proxy.setLayoutVersion(1);
+  QVERIFY(!proxy.parseCode(kMsgQScreenLayoutV2));
+  QVERIFY(events.events.empty());
+  proxy.setLayoutVersion(2);
+  QVERIFY(proxy.parseCode(kMsgQScreenLayoutV2));
+  QCOMPARE(events.events.size(), size_t(1));
+  const auto *command = dynamic_cast<const Command *>(events.events.front().getDataObject());
+  QVERIFY(command);
+  QCOMPARE(command->kind, Command::Kind::Move);
+  QCOMPARE(command->id, quint32(123));
+  QCOMPARE(command->move, move);
+  QVERIFY(proxy.layoutSubscribed());
+  stream->push(QByteArray::fromHex("00018001"));
+  QVERIFY_EXCEPTION_THROWN(proxy.parseCode(kMsgQScreenLayoutV2), BadClientException);
+  writeWireObject(&outgoing, kMsgQScreenLayoutV2,
+      {{"kind", QStringLiteral("move")}, {"id", 0}, {"move", moveToJson(move)}});
+  stream->push(outgoing.take().mid(4));
+  QVERIFY_EXCEPTION_THROWN(proxy.parseCode(kMsgQScreenLayoutV2), BadClientException);
+  QCOMPARE(events.events.size(), size_t(1));
+}

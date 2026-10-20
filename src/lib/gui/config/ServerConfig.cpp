@@ -13,6 +13,7 @@
 
 #include <QAbstractButton>
 #include <QPushButton>
+#include <algorithm>
 
 using enum ComputerConfig::SwitchCorner;
 using enum ComputerConfig::Fix;
@@ -260,6 +261,122 @@ void ServerConfig::addClient(const QString &clientName)
   }
 
   m_computers.addComputerByPriority(Computer(clientName));
+}
+
+deskflow::layout::Snapshot ServerConfig::screenLayout() const
+{
+  namespace layout = deskflow::layout;
+  deskflow::layout::Snapshot result;
+  result.serverName = getServerName();
+  result.localName = result.serverName;
+  result.protocolVersion = 2;
+  if (useExternalConfig()) {
+    result.error = QObject::tr("当前使用外部配置，请在完整屏幕布局设置中编辑。");
+    return result;
+  }
+  if (m_columns < 1 || m_rows < 1 || static_cast<qint64>(m_columns) * m_rows != m_computers.size()) {
+    result.error = QObject::tr("屏幕网格配置无效，请在完整屏幕布局设置中检查。");
+    return result;
+  }
+
+  int serverIndex = -1;
+  int serverCount = 0;
+  for (int i = 0; i < m_computers.size(); ++i) {
+    const auto &computer = m_computers[i];
+    if (computer.isNull()) continue;
+    if (computer.isServer()) {
+      ++serverCount;
+      serverIndex = i;
+    }
+  }
+  if (serverCount != 1 || m_computers[serverIndex].name() != result.serverName) {
+    result.error = QObject::tr("无法确定键鼠来源电脑，请在完整屏幕布局设置中检查。");
+    return result;
+  }
+  for (int i = 0; i < m_computers.size(); ++i) {
+    const auto &computer = m_computers[i];
+    if (computer.isNull()) continue;
+    result.screens.append({computer.name(), i % m_columns - serverIndex % m_columns,
+                           i / m_columns - serverIndex / m_columns});
+  }
+  result.screens = layout::topology_detail::sortedScreens(result.screens);
+  layout::topology_detail::updatePairFields(result);
+  if (!layout::topology_detail::screenShape(result, &result.error)) {
+    result.screens.clear();
+    result.clientName.clear();
+    result.direction = layout::Direction::Unknown;
+    return result;
+  }
+  result.revision = layout::revisionFor(result);
+  if (!layout::validateTopology(result, &result.error)) return result;
+  if (result.screens.size() < 2) {
+    result.error = QObject::tr("尚未添加目标电脑，请先在屏幕布局中添加。");
+    return result;
+  }
+  if (!Settings::isWritable()) {
+    result.error = QObject::tr("设置文件为只读，无法更改屏幕布局。");
+    return result;
+  }
+  result.editable = true;
+  return result;
+}
+
+bool ServerConfig::setScreenLayout(deskflow::layout::Direction direction, QString *error)
+{
+  using deskflow::layout::Direction;
+  const auto reject = [error](const QString &message) {
+    if (error) *error = message;
+    return false;
+  };
+  if (!deskflow::layout::isCardinal(direction))
+    return reject(QObject::tr("请选择上、下、左或右方向。"));
+  const auto current = screenLayout();
+  if (!current.editable) return reject(current.error);
+  if (current.screens.size() != 2)
+    return reject(QObject::tr("多台电脑请拖动具体屏幕来调整位置。"));
+  const int dx = direction == Direction::Left ? -1 : direction == Direction::Right ? 1 : 0;
+  const int dy = direction == Direction::Above ? -1 : direction == Direction::Below ? 1 : 0;
+  return moveScreen({current.clientName, dx, dy, current.revision}, error);
+}
+
+bool ServerConfig::moveScreen(const deskflow::layout::Move &move, QString *error)
+{
+  const auto reject = [error](const QString &message) {
+    if (error) *error = message;
+    return false;
+  };
+  const auto current = screenLayout();
+  if (!current.editable) return reject(current.error);
+  const auto candidate = deskflow::layout::movedSnapshot(current, move, error);
+  if (!candidate) return false;
+  int serverIndex = -1;
+  for (int i = 0; i < m_computers.size(); ++i)
+    if (!m_computers[i].isNull() && m_computers[i].isServer()) { serverIndex = i; break; }
+  int minColumn = 0, maxColumn = 0, minRow = 0, maxRow = 0;
+  for (const auto &screen : candidate->screens) {
+    minColumn = std::min(minColumn, screen.column);
+    maxColumn = std::max(maxColumn, screen.column);
+    minRow = std::min(minRow, screen.row);
+    maxRow = std::max(maxRow, screen.row);
+  }
+  if (maxColumn - minColumn >= m_columns || maxRow - minRow >= m_rows)
+    return reject(QObject::tr("屏幕网格没有足够空间，请在完整屏幕布局设置中调整。"));
+  const int requestedColumn = serverIndex % m_columns + (move.screenName == current.serverName ? move.column : 0);
+  const int requestedRow = serverIndex / m_columns + (move.screenName == current.serverName ? move.row : 0);
+  const int originColumn = std::clamp(requestedColumn, -minColumn, m_columns - 1 - maxColumn);
+  const int originRow = std::clamp(requestedRow, -minRow, m_rows - 1 - maxRow);
+  ComputerList relocated(m_columns);
+  relocated.resize(m_computers.size());
+  for (const auto &screen : candidate->screens) {
+    const auto found = std::find_if(m_computers.cbegin(), m_computers.cend(), [&](const auto &computer) {
+      return computer.name() == screen.name;
+    });
+    if (found == m_computers.cend()) return reject(QObject::tr("来源端电脑列表已改变，请刷新后重试。"));
+    relocated[(originRow + screen.row) * m_columns + originColumn + screen.column] = *found;
+  }
+  m_computers = std::move(relocated);
+  if (error) error->clear();
+  return true;
 }
 
 void ServerConfig::setConfigFile(const QString &configFile) const

@@ -24,13 +24,9 @@ BEGIN
     BEGIN
         BLOCK "040904E4"
         BEGIN
-            VALUE "CompanyName",      "@CMAKE_PROJECT_VENDOR@\0"
             VALUE "FileDescription",  "@EXE_DESCRIPTION@\0"
             VALUE "FileVersion",      VER_VERSION_STR
             VALUE "InternalName",     NAME_STR
-            VALUE "LegalCopyright",   "@CMAKE_PROJECT_COPYRIGHT@\0"
-            VALUE "LegalTrademarks1", "All Rights Reserved\0"
-            VALUE "LegalTrademarks2", "\0"
             VALUE "OriginalFilename", "@target@.exe\0"
             VALUE "ProductName",      NAME_STR
             VALUE "ProductVersion",   VER_VERSION_STR

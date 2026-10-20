@@ -8,7 +8,9 @@
 #pragma once
 
 #include "common/Enums.h"
+#include "common/ScreenLayout.h"
 #include "common/Settings.h"
+#include "common/ShortcutRules.h"
 #include "gui/FileTail.h"
 #include "gui/config/ServerConfig.h"
 
@@ -47,6 +49,11 @@ public:
   void applyLogLevel();
   void clearSettings();
   void retryDaemon();
+  const deskflow::layout::Snapshot &screenLayout() const { return m_screenLayout; }
+  bool requestLayout(deskflow::layout::Direction direction);
+  bool requestLayoutMove(const deskflow::layout::Move &move);
+  void refreshScreenLayout();
+  void completeLayoutRequest(quint32 requestId, bool success, const QString &error = {});
 
   // getters
   Settings::CoreMode mode() const
@@ -69,6 +76,8 @@ public:
   {
     return m_connectionState;
   }
+  shortcuts::DeviceOS sourceOperatingSystem() const { return m_sourceOperatingSystem; }
+  bool serverModifierMapping() const { return m_serverModifierMapping; }
 
   // setters
   void setAddress(const QString &address)
@@ -94,6 +103,14 @@ Q_SIGNALS:
   void retryIn(int seconds);
   void peerFingerprint(const QString &fingerprint);
   void missingKeyboardLayouts(const QString &layouts);
+  void sourceOperatingSystemChanged(deskflow::shortcuts::DeviceOS os);
+  void serverModifierMappingChanged(bool active);
+  void screenLayoutChanged(const deskflow::layout::Snapshot &snapshot);
+  void layoutRequestFinished(bool success, const QString &error);
+  void layoutRequestReceived(quint32 requestId, deskflow::layout::Direction expected, deskflow::layout::Direction desired);
+  void layoutMoveReceived(quint32 requestId, const deskflow::layout::Move &move);
+  void layoutApplyFinished(quint32 requestId, bool success, const QString &error);
+  void layoutSynchronizationUncertain(const QString &error);
 
 private Q_SLOTS:
   void onProcessFinished(int exitCode, QProcess::ExitStatus);
@@ -112,9 +129,14 @@ private:
   void setProcessState(ProcessState state);
   bool checkSecureSocket(const QString &line);
   void handleLogLines(const QString &text);
+  void handleProcessOutput(const QByteArray &bytes, QString &pending);
+  void setSourceOperatingSystem(shortcuts::DeviceOS os);
+  void setServerModifierMapping(bool active);
   QString correctedAddress(const QString &address) const;
   void setupDaemonLogTail(const QString &logPath);
   void checkExistingProcess();
+  void onCoreIpcConnectionFailed();
+  void reconcileScreenLayout(const deskflow::layout::Snapshot &snapshot);
   static QString makeQuotedArgs(const QString &app, const QStringList &args);
   static QString processModeToString(const Settings::ProcessMode mode);
   static QString processStateToString(const CoreProcess::ProcessState state);
@@ -134,6 +156,29 @@ private:
   FileTail *m_daemonFileTail = nullptr;
   QProcess *m_process = nullptr;
   QString m_appPath;
+  shortcuts::DeviceOS m_sourceOperatingSystem = shortcuts::DeviceOS::Unknown;
+  bool m_serverModifierMapping = false;
+  deskflow::layout::Snapshot m_screenLayout;
+  quint32 m_nextLayoutRequestId = 0;
+  quint32 m_pendingLayoutRequestId = 0;
+  QTimer m_layoutRequestTimer;
+  struct ServerLayoutTransaction
+  {
+    quint32 id;
+    deskflow::layout::Direction expected;
+    deskflow::layout::Direction desired;
+    QString serverName;
+    QString clientName;
+    QString expectedRevision;
+    QString desiredRevision;
+  };
+  std::optional<ServerLayoutTransaction> m_serverLayoutTransaction;
+  bool m_layoutReconcileNeeded = false;
+  int m_layoutReconnectAttempts = 0;
+  quint32 m_layoutQueryId = 0;
+  QTimer m_layoutReconnectTimer;
+  QString m_stdoutPending;
+  QString m_stderrPending;
 };
 
 } // namespace deskflow::gui

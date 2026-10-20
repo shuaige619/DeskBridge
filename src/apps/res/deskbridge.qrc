@@ -1,0 +1,6 @@
+<RCC>
+    <qresource prefix="/">
+        <file>deskbridge.png</file>
+        <file>icons/deskbridge-tray.svg</file>
+    </qresource>
+</RCC>

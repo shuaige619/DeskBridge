@@ -36,6 +36,11 @@ void LogWidget::appendLine(const QString &msg)
   m_textLog->appendPlainText(msg);
 }
 
+QTextDocument *LogWidget::logDocument() const
+{
+  return m_textLog->document();
+}
+
 void LogWidget::findNext(const QString &text)
 {
   if (text.isEmpty())

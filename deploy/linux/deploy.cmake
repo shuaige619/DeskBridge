@@ -5,24 +5,44 @@
 # calling CMAKE_CURRENT_LIST_DIR after include would return the wrong scope var
 set(MY_DIR ${CMAKE_CURRENT_LIST_DIR})
 
+set(_desktop_file "${MY_DIR}/org.deskflow.deskflow.desktop")
+set(_metainfo_file "${MY_DIR}/org.deskflow.deskflow.metainfo.xml")
+set(_icon_id "org.deskflow.deskflow")
+if(DESKBRIDGE_PERSONAL_BUILD)
+  # Reuse the upstream artwork without replacing its installed icon or launcher.
+  set(_icon_id "${CMAKE_PROJECT_REV_FQDN}")
+  file(READ "${_desktop_file}" _desktop)
+  string(REPLACE "=Deskflow" "=DeskBridge" _desktop "${_desktop}")
+  string(REPLACE "Exec=deskflow" "Exec=\"${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/${DESKFLOW_GUI_TARGET}\"" _desktop "${_desktop}")
+  string(REPLACE "Icon=org.deskflow.deskflow" "Icon=${_icon_id}" _desktop "${_desktop}")
+  set(_desktop_file "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_PROJECT_REV_FQDN}.desktop")
+  file(WRITE "${_desktop_file}" "${_desktop}")
+  file(READ "${_metainfo_file}" _metainfo)
+  string(REPLACE "org.deskflow.deskflow" "${CMAKE_PROJECT_REV_FQDN}" _metainfo "${_metainfo}")
+  string(REPLACE "<name>Deskflow</name>" "<name>DeskBridge</name>" _metainfo "${_metainfo}")
+  set(_metainfo_file "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_PROJECT_REV_FQDN}.metainfo.xml")
+  file(WRITE "${_metainfo_file}" "${_metainfo}")
+endif()
+
 # Install our desktop file
 install(
-  FILES ${MY_DIR}/${CMAKE_PROJECT_REV_FQDN}.desktop
+  FILES "${_desktop_file}"
   DESTINATION ${CMAKE_INSTALL_DATADIR}/applications
 )
 
 # Install our icon
-install(FILES ${MY_DIR}/org.deskflow.deskflow.png DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/512x512/apps/)
+install(FILES ${MY_DIR}/org.deskflow.deskflow.png DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/512x512/apps/ RENAME ${_icon_id}.png)
 
 # Install our symbolic icon
 install(
   FILES ${CMAKE_SOURCE_DIR}/src/apps/res/icons/deskflow-light/apps/64/org.deskflow.deskflow-symbolic.svg
   DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/symbolic/apps/
+  RENAME ${_icon_id}-symbolic.svg
 )
 
 # Install our metainfo
 install(
-  FILES ${MY_DIR}/${CMAKE_PROJECT_REV_FQDN}.metainfo.xml
+  FILES "${_metainfo_file}"
   DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo/
 )
 
@@ -32,6 +52,12 @@ configure_file(
   ${CMAKE_BINARY_DIR}/PKGBUILD
   @ONLY
 )
+if(DESKBRIDGE_PERSONAL_BUILD)
+  file(READ "${CMAKE_BINARY_DIR}/PKGBUILD" _pkgbuild)
+  string(REPLACE "_basename=deskflow" "_basename=deskbridge" _pkgbuild "${_pkgbuild}")
+  string(REGEX REPLACE "conflicts=\\([^\n]*\\)" "conflicts=()" _pkgbuild "${_pkgbuild}")
+  file(WRITE "${CMAKE_BINARY_DIR}/PKGBUILD" "${_pkgbuild}")
+endif()
 
 set(CPACK_DEBIAN_PACKAGE_SECTION "utils")
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)

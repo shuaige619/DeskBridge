@@ -33,8 +33,12 @@ else()
   message(STATUS "UNKNOWN System: ${CMAKE_SYSTEM_NAME}")
 endif()
 
-# Always use "deskflow" for start of name
-set(CPACK_PACKAGE_FILE_NAME "${CMAKE_PROJECT_NAME}-${PACKAGE_VERSION_LABEL}-${OS_STRING}")
+set(_package_basename "${CMAKE_PROJECT_NAME}")
+if(DESKBRIDGE_PERSONAL_BUILD)
+  set(_package_basename "deskbridge")
+  set(CPACK_PACKAGE_NAME "deskbridge")
+endif()
+set(CPACK_PACKAGE_FILE_NAME "${_package_basename}-${PACKAGE_VERSION_LABEL}-${OS_STRING}")
 message(STATUS "Package Basename: ${CPACK_PACKAGE_FILE_NAME}")
 
 include(CPack)

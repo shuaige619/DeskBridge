@@ -6,12 +6,15 @@
 # temp dirs created during build
 /build
 /dist
+/design/
 /deps
 /tmp
 /vcpkg
 /vcpkg_installed
 /.cache
 /.venv
+__pycache__/
+*.pyc
 aqtinstall.log
 Brewfile.lock.json
 

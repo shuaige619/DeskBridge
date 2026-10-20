@@ -18,8 +18,10 @@
 #include "deskflow/ProtocolTypes.h"
 #include "deskflow/ProtocolUtil.h"
 #include "deskflow/StreamChunker.h"
+#include "deskflow/ipc/CoreIpc.h"
 #include "io/IStream.h"
 
+#include <array>
 #include <cstring>
 
 //
@@ -46,12 +48,23 @@ ServerProxy::ServerProxy(Client *client, deskflow::IStream *stream, IEventQueue 
     ClipboardChunk::send(m_stream, e.getDataObject());
   });
 
+#if DESKBRIDGE_PERSONAL_BUILD
+  ipcSetLayoutTarget(m_events, this);
+  m_events->addHandler(EventTypes::ScreenLayoutCommand, this, [this](const auto &event) {
+    if (const auto *command = dynamic_cast<const deskflow::layout::Command *>(event.getDataObject()))
+      handleScreenLayoutCommand(*command);
+  });
+#endif
+
   // send heartbeat
   setKeepAliveRate(kKeepAliveRate);
 }
 
 ServerProxy::~ServerProxy()
 {
+  ipcClearLayoutTarget(this);
+  ipcPublishScreenLayout({});
+  m_events->removeHandler(EventTypes::ScreenLayoutCommand, this);
   setKeepAliveRate(-1.0);
   m_events->removeHandler(EventTypes::StreamInputReady, m_stream->getEventTarget());
   m_events->removeHandler(EventTypes::ClipboardSending, this);
@@ -78,6 +91,8 @@ void ServerProxy::setKeepAliveRate(double rate)
 
 void ServerProxy::handleData()
 {
+  const auto batchSample = m_inputTiming.beginSample(InputTimingMetrics::Kind::Batch);
+
   // handle messages until there are no more.  first read message code.
   uint8_t code[4];
   uint32_t n = m_stream->read(code, 4);
@@ -120,6 +135,10 @@ void ServerProxy::handleData()
   }
 
   flushCompressedMouse();
+  m_inputTiming.finishSample(InputTimingMetrics::Kind::Batch, batchSample);
+  if (batchSample.active) {
+    reportInputTiming();
+  }
 }
 
 ServerProxy::ConnectionResult ServerProxy::parseHandshakeMessage(const uint8_t *code)
@@ -217,6 +236,14 @@ ServerProxy::ConnectionResult ServerProxy::parseMessage(const uint8_t *code)
 {
   using enum ConnectionResult;
 
+  if (memcmp(code, kMsgDScreenLayoutV2, 4) == 0 && m_layoutVersion == 2) {
+    receiveScreenLayoutV2();
+    return Okay;
+  }
+  if (memcmp(code, kMsgDScreenLayout, 4) == 0 && m_layoutVersion == 1) {
+    receiveScreenLayout();
+    return Okay;
+  }
   if (memcmp(code, kMsgDMouseMove, 4) == 0) {
     mouseMove();
   }
@@ -374,13 +401,55 @@ void ServerProxy::flushCompressedMouse()
 {
   if (m_compressMouse) {
     m_compressMouse = false;
-    m_client->mouseMove(m_xMouse, m_yMouse);
+    m_inputTiming.finishSample(InputTimingMetrics::Kind::PendingDwell, m_pendingDwellSample);
+    const auto sample = m_pendingMouseSample;
+    m_pendingMouseSample = {};
+    m_pendingDwellSample = {};
+    submitMouseMove(m_xMouse, m_yMouse, false, sample);
   }
   if (m_compressMouseRelative) {
     m_compressMouseRelative = false;
-    m_client->mouseRelativeMove(m_dxMouse, m_dyMouse);
+    m_inputTiming.finishSample(InputTimingMetrics::Kind::PendingDwell, m_pendingDwellSample);
+    const auto sample = m_pendingMouseSample;
+    m_pendingMouseSample = {};
+    m_pendingDwellSample = {};
+    submitMouseMove(m_dxMouse, m_dyMouse, true, sample);
     m_dxMouse = 0;
     m_dyMouse = 0;
+  }
+}
+
+void ServerProxy::submitMouseMove(int32_t x, int32_t y, bool relative, InputTimingMetrics::Sample sample)
+{
+  if (relative) {
+    m_client->mouseRelativeMove(x, y);
+  } else {
+    m_client->mouseMove(x, y);
+  }
+  m_inputTiming.finishSample(InputTimingMetrics::Kind::MouseParseToSubmit, sample);
+}
+
+void ServerProxy::reportInputTiming()
+{
+  InputTimingMetrics::Report report;
+  if (!m_inputTiming.takeReport(report)) {
+    return;
+  }
+
+  static constexpr std::array<const char *, InputTimingMetrics::kKindCount> labels{
+      "mouse-last-parse-to-submit", "mouse-pending-dwell", "input-batch"
+  };
+  for (size_t i = 0; i < labels.size(); ++i) {
+    const auto &summary = report.metrics[i];
+    if (summary.samples == 0) {
+      continue;
+    }
+    LOG_INFO(
+        "input timing %s (client only, 1/16 sampled): n=%llu mean=%.2fus p50<=%.2fus p95<=%.2fus p99<=%.2fus "
+        "max=%.2fus",
+        labels[i], static_cast<unsigned long long>(summary.samples), summary.meanUs, summary.p50UpperUs,
+        summary.p95UpperUs, summary.p99UpperUs, summary.maxUs
+    );
   }
 }
 
@@ -510,6 +579,8 @@ void ServerProxy::enter()
   m_compressMouseRelative = false;
   m_dxMouse = 0;
   m_dyMouse = 0;
+  m_pendingMouseSample = {};
+  m_pendingDwellSample = {};
   m_seqNum = seqNum;
 
   // forward
@@ -530,6 +601,10 @@ void ServerProxy::leave()
 
 void ServerProxy::setClipboard()
 {
+  // Clipboard assembly and platform conversion can be expensive. Apply any
+  // preceding pointer motion before reading or processing this clipboard chunk.
+  flushCompressedMouse();
+
   // parse
   ClipboardID id;
   uint32_t seq;
@@ -559,6 +634,9 @@ void ServerProxy::setClipboard()
 
 void ServerProxy::grabClipboard()
 {
+  // Clipboard ownership changes may call into the platform clipboard as well.
+  flushCompressedMouse();
+
   // parse
   ClipboardID id;
   uint32_t seqNum;
@@ -650,64 +728,79 @@ void ServerProxy::mouseUp()
 
 void ServerProxy::mouseMove()
 {
+  // Sample groups instead of packets, so fixed-size input bursts cannot
+  // repeatedly replace a sampled token with an unsampled last position.
+  auto sample = m_compressMouse ? m_pendingMouseSample
+                                : m_inputTiming.beginSample(InputTimingMetrics::Kind::MouseParseToSubmit);
+  if (m_compressMouse && sample.active) {
+    sample.started = InputTimingMetrics::Clock::now();
+  }
+
   // parse
-  bool ignore;
   int16_t x;
   int16_t y;
   ProtocolUtil::readf(m_stream, kMsgDMouseMove + 4, &x, &y);
-
-  // note if we should ignore the move
-  ignore = m_ignoreMouse;
-
-  // compress mouse motion events if more input follows
-  if (!ignore && !m_compressMouse && m_stream->isReady()) {
-    m_compressMouse = true;
-  }
-
-  // if compressing then ignore the motion but record it
-  if (m_compressMouse) {
-    m_compressMouseRelative = false;
-    ignore = true;
-    m_xMouse = x;
-    m_yMouse = y;
-    m_dxMouse = 0;
-    m_dyMouse = 0;
-  }
   LOG_VERBOSE("recv mouse move %d,%d", x, y);
 
-  // forward
-  if (!ignore) {
-    m_client->mouseMove(x, y);
+  if (m_ignoreMouse) {
+    return;
+  }
+
+  // Only consecutive motion of the same type can be compressed. A relative
+  // move must take effect before this absolute position replaces it.
+  if (m_compressMouseRelative) {
+    flushCompressedMouse();
+  }
+
+  // Keep the latest absolute position while more input follows.
+  if (m_compressMouse || m_stream->isReady()) {
+    if (!m_compressMouse) {
+      m_pendingDwellSample = m_inputTiming.beginSample(InputTimingMetrics::Kind::PendingDwell);
+    }
+    m_compressMouse = true;
+    m_xMouse = x;
+    m_yMouse = y;
+    m_pendingMouseSample = sample;
+  } else {
+    submitMouseMove(x, y, false, sample);
   }
 }
 
 void ServerProxy::mouseRelativeMove()
 {
+  auto sample = m_compressMouseRelative
+                    ? m_pendingMouseSample
+                    : m_inputTiming.beginSample(InputTimingMetrics::Kind::MouseParseToSubmit);
+  if (m_compressMouseRelative && sample.active) {
+    sample.started = InputTimingMetrics::Clock::now();
+  }
+
   // parse
-  bool ignore;
   int16_t dx;
   int16_t dy;
   ProtocolUtil::readf(m_stream, kMsgDMouseRelMove + 4, &dx, &dy);
-
-  // note if we should ignore the move
-  ignore = m_ignoreMouse;
-
-  // compress mouse motion events if more input follows
-  if (!ignore && !m_compressMouseRelative && m_stream->isReady()) {
-    m_compressMouseRelative = true;
-  }
-
-  // if compressing then ignore the motion but record it
-  if (m_compressMouseRelative) {
-    ignore = true;
-    m_dxMouse += dx;
-    m_dyMouse += dy;
-  }
   LOG_VERBOSE("recv mouse relative move %d,%d", dx, dy);
 
-  // forward
-  if (!ignore) {
-    m_client->mouseRelativeMove(dx, dy);
+  if (m_ignoreMouse) {
+    return;
+  }
+
+  // Apply a preceding absolute position before adding relative motion to it.
+  if (m_compressMouse) {
+    flushCompressedMouse();
+  }
+
+  // Accumulate consecutive relative deltas while more input follows.
+  if (m_compressMouseRelative || m_stream->isReady()) {
+    if (!m_compressMouseRelative) {
+      m_pendingDwellSample = m_inputTiming.beginSample(InputTimingMetrics::Kind::PendingDwell);
+    }
+    m_compressMouseRelative = true;
+    m_dxMouse += dx;
+    m_dyMouse += dy;
+    m_pendingMouseSample = sample;
+  } else {
+    submitMouseMove(dx, dy, true, sample);
   }
 }
 
@@ -739,6 +832,7 @@ void ServerProxy::screensaver()
 
 void ServerProxy::resetOptions()
 {
+  m_layoutVersion = 0;
   // parse
   LOG_VERBOSE("recv reset options");
 
@@ -762,10 +856,24 @@ void ServerProxy::setOptions()
   LOG_VERBOSE("recv set options size=%d", options.size());
 
   if (options.size() % 2 != 0) {
+    m_client->setSourceOperatingSystem(deskflow::shortcuts::DeviceOS::Unknown);
     LOG_ERR("options are the incorrect size, can not process them");
     return;
   }
 
+#if DESKBRIDGE_PERSONAL_BUILD
+  m_layoutVersion = deskflow::layout::capabilityVersion(options);
+  if (m_layoutVersion == 2) {
+    deskflow::layout::writeWireObject(m_stream, kMsgQScreenLayoutV2, {{"kind", QStringLiteral("query")}, {"id", 0}});
+  } else if (m_layoutVersion == 1) {
+    // Legacy pair data remains viewable, but no v2 move ever reaches v1.
+    ProtocolUtil::writef(m_stream, kMsgQScreenLayout, 0, 0, 0);
+  } else {
+    m_screenLayout = {};
+    m_screenLayout.error = QStringLiteral("请将键鼠来源端更新为配套 DeskBridge，以同步和调整布局。");
+    ipcPublishScreenLayout(m_screenLayout);
+  }
+#endif
   // forward
   m_client->setOptions(options);
 
@@ -808,4 +916,105 @@ void ServerProxy::infoAcknowledgment()
 {
   LOG_VERBOSE("recv info acknowledgment");
   m_ignoreMouse = false;
+}
+
+namespace {
+std::string readLayoutString(deskflow::IStream *stream, uint32_t maximum)
+{
+  uint32_t size = 0;
+  if (!ProtocolUtil::readf(stream, "%4i", &size) || size > maximum)
+    throw BadClientException("layout string exceeds maximum size");
+  std::string result(size, '\0');
+  uint32_t offset = 0;
+  while (offset < size) {
+    const auto count = stream->read(result.data() + offset, size - offset);
+    if (!count)
+      throw BadClientException("incomplete layout string");
+    offset += count;
+  }
+  const auto decoded = QString::fromUtf8(result);
+  if (decoded.toUtf8() != QByteArray::fromStdString(result))
+    throw BadClientException("layout string is not UTF-8");
+  return result;
+}
+}
+
+void ServerProxy::receiveScreenLayout()
+{
+  uint32_t direction, editable, requestId, success;
+  if (!ProtocolUtil::readf(m_stream, "%4i%4i%4i%4i", &direction, &editable, &requestId, &success) ||
+      direction > 4 || editable > 1 || success > 1)
+    throw BadClientException("invalid screen layout state");
+  const auto server = readLayoutString(m_stream, deskflow::layout::kMaxNameLength * 4);
+  const auto client = readLayoutString(m_stream, deskflow::layout::kMaxNameLength * 4);
+  const auto error = readLayoutString(m_stream, deskflow::layout::kMaxErrorLength * 4);
+  deskflow::layout::Snapshot snapshot{QString::fromStdString(server), QString::fromStdString(client),
+                                      static_cast<deskflow::layout::Direction>(direction), editable != 0,
+                                      QString::fromStdString(error)};
+  if (snapshot.error.size() > deskflow::layout::kMaxErrorLength ||
+      !deskflow::layout::snapshotFromJson(deskflow::layout::toJson(snapshot)) ||
+      snapshot.clientName.compare(QString::fromStdString(m_client->getName()), Qt::CaseInsensitive) != 0)
+    throw BadClientException("screen layout does not match this client");
+  snapshot.protocolVersion = 1;
+  snapshot.localName = snapshot.clientName;
+  snapshot.editable = false;
+  snapshot.error = QStringLiteral("来源端使用旧版布局协议，请更新双方 DeskBridge 以拖动完整布局。");
+  m_screenLayout = snapshot;
+  ipcPublishScreenLayout(snapshot);
+  if (requestId)
+    ipcSendToClient("layoutResult", deskflow::layout::encodeIpc(
+        {{"id", static_cast<double>(requestId)}, {"success", success != 0}, {"error", snapshot.error}}));
+}
+
+void ServerProxy::handleScreenLayoutCommand(const deskflow::layout::Command &command)
+{
+  using namespace deskflow::layout;
+  if (command.kind == Command::Kind::Query) {
+    ipcPublishScreenLayout(m_screenLayout);
+    if (command.id)
+      ipcSendToClient("layoutQueryResult", encodeIpc({{"id", static_cast<double>(command.id)},
+                                                     {"snapshot", toJson(m_screenLayout)}}));
+    return;
+  }
+  if (command.kind != Command::Kind::Move && command.kind != Command::Kind::Request)
+    return;
+  Move move = command.move;
+  if (command.kind == Command::Kind::Request && m_screenLayout.screens.size() == 2 &&
+      validRequest(command.id, static_cast<quint32>(command.expected), static_cast<quint32>(command.desired)) &&
+      command.expected == m_screenLayout.direction) {
+    move = {m_screenLayout.clientName,
+            command.desired == deskflow::layout::Direction::Left ? -1 : command.desired == deskflow::layout::Direction::Right ? 1 : 0,
+            command.desired == deskflow::layout::Direction::Above ? -1 : command.desired == deskflow::layout::Direction::Below ? 1 : 0,
+            m_screenLayout.revision};
+  }
+  QString error;
+  if (m_layoutVersion != 2 || !m_client->isConnected() || !m_screenLayout.editable || !command.id ||
+      !movedSnapshot(m_screenLayout, move, &error)) {
+    ipcSendToClient("layoutResult", encodeIpc({{"id", static_cast<double>(command.id)}, {"success", false},
+        {"error", error.isEmpty() ? QStringLiteral("请连接支持完整布局的配套 DeskBridge。") : error}}));
+    return;
+  }
+  writeWireObject(m_stream, kMsgQScreenLayoutV2,
+      {{"kind", QStringLiteral("move")}, {"id", static_cast<double>(command.id)}, {"move", moveToJson(move)}});
+}
+
+void ServerProxy::receiveScreenLayoutV2()
+{
+  using namespace deskflow::layout;
+  const auto object = readWireObject(m_stream);
+  const auto rawId = object.value("id");
+  const auto id = requestIdFromJson(object);
+  if (!rawId.isDouble() || (!id && rawId.toDouble(-1) != 0) || !object.value("success").isBool() ||
+      !object.value("snapshot").isObject() || object.size() != 3)
+    throw BadClientException("invalid topology response");
+  const auto snapshot = snapshotFromJson(object.value("snapshot").toObject());
+  if (!snapshot || snapshot->protocolVersion != 2)
+    throw BadClientException("invalid topology snapshot");
+  // An authenticated source maps the accepted connection alias to localName.
+  // The common decoder verifies that localName belongs to the complete graph.
+  m_screenLayout = *snapshot;
+  ipcPublishScreenLayout(*snapshot);
+  if (id)
+    ipcSendToClient("layoutResult", encodeIpc({{"id", static_cast<double>(*id)},
+        {"success", object.value("success").toBool()}, {"error", snapshot->error}}));
 }

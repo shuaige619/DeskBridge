@@ -71,6 +71,11 @@ void LogDock::appendLine(const QString &msg)
   }
 }
 
+QTextDocument *LogDock::logDocument() const
+{
+  return m_textLog->logDocument();
+}
+
 void LogDock::setFloating(bool floating)
 {
   if (floating) {

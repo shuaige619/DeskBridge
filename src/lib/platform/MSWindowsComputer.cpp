@@ -26,12 +26,15 @@
 #include "platform/MSWindowsDesks.h"
 #include "platform/MSWindowsEventQueueBuffer.h"
 #include "platform/MSWindowsKeyState.h"
+#include "platform/MSWindowsHandle.h"
 #include "platform/MSWindowsScreenSaver.h"
 
 #include <Shlobj.h>
 #include <algorithm>
 #include <comutil.h>
 #include <string.h>
+#include <QDir>
+#include <QString>
 
 // suppress warning about GetVersionEx, which is used indirectly in this
 // compilation unit.
@@ -1720,6 +1723,27 @@ std::string MSWindowsComputer::getSecureInputApp() const
 {
   // ignore on Windows
   return "";
+}
+
+std::string MSWindowsComputer::getForegroundApplication() const
+{
+  const HWND window = GetForegroundWindow();
+  if (window == nullptr) return {};
+  DWORD pid = 0;
+  if (GetWindowThreadProcessId(window, &pid) == 0 || pid == 0) return {};
+  MSWindowsHandle process(OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid));
+  if (process.get() == nullptr) return {};
+  std::wstring imagePath(32768, L'\0');
+  DWORD length = static_cast<DWORD>(imagePath.size());
+  if (!QueryFullProcessImageNameW(process.get(), 0, imagePath.data(), &length) || length == 0) return {};
+  DWORD currentPid = 0;
+  if (GetForegroundWindow() != window || GetWindowThreadProcessId(window, &currentPid) == 0 || currentPid != pid)
+    return {};
+  const auto path = QDir::cleanPath(QDir::fromNativeSeparators(
+      QString::fromWCharArray(imagePath.data(), static_cast<int>(length))
+  )).toCaseFolded();
+  if (!QDir::isAbsolutePath(path)) return {};
+  return path.toUtf8().toStdString();
 }
 
 bool MSWindowsComputer::isModifierRepeat(KeyModifierMask oldState, KeyModifierMask state, WPARAM wParam) const

@@ -19,6 +19,15 @@ set(OS_STRING "win-${BUILD_ARCHITECTURE}")
 
 list(APPEND CPACK_GENERATOR "ZIP")
 
+# Personal builds are archives only. Never generate or reuse the upstream MSI
+# upgrade identity, Deskflow service, firewall rules, or process-close actions.
+if(DESKBRIDGE_PERSONAL_BUILD)
+  set(CPACK_GENERATOR "ZIP")
+  set(CPACK_PACKAGE_NAME "DeskBridge")
+  set(CPACK_PACKAGE_EXECUTABLES "${DESKFLOW_GUI_TARGET}" "DeskBridge")
+  return()
+endif()
+
 # If Wix4+ is installed make a package
 find_program(WIX_APP wix)
 if (NOT "${WIX_APP}" STREQUAL "")

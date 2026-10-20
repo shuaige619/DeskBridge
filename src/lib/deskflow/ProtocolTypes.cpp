@@ -53,3 +53,9 @@ const char *const kMsgEIncompatible = "EICV%2i%2i";
 const char *const kMsgEBusy = "EBSY";
 const char *const kMsgEUnknown = "EUNK";
 const char *const kMsgEBad = "EBAD";
+
+const char *const kMsgQScreenLayout = "QLAY%4i%4i%4i";
+const char *const kMsgDScreenLayout = "DLAY%4i%4i%4i%4i%s%s%s";
+
+const char *const kMsgQScreenLayoutV2 = "QLY2%s";
+const char *const kMsgDScreenLayoutV2 = "DLY2%s";

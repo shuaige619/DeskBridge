@@ -10,6 +10,12 @@ class ServerConfigTests : public QObject
 {
   Q_OBJECT
 private Q_SLOTS:
+  void screenLayout_threeAndFourNodes();
+  void screenLayout_rejectsInconsistentAndIncompleteGraph();
+  void screenLayout_pair_data();
+  void screenLayout_pair();
+  void screenLayout_rejectsCustomLinks();
+  void screenLayout_canonicalizesAliases();
   void equalityCheck();
   void equalityCheck_diff_options();
   void equalityCheck_diff_alias();

@@ -20,6 +20,9 @@
 #include <cstdlib>
 #include <istream>
 #include <ostream>
+#include <array>
+#include <queue>
+#include <cmath>
 
 using namespace deskflow::string;
 
@@ -31,6 +34,91 @@ namespace deskflow::server {
 Config::Config(IEventQueue *events) : m_inputFilter(events), m_events(events)
 {
   // do nothing
+}
+
+deskflow::layout::Snapshot Config::screenLayout(const std::string &serverName) const
+{
+  using LayoutDirection = deskflow::layout::Direction;
+  deskflow::layout::Snapshot result;
+  const auto canonical = getCanonicalName(serverName);
+  result.serverName = QString::fromStdString(canonical);
+  result.localName = result.serverName;
+  result.protocolVersion = 2;
+  result.error = QStringLiteral("当前配置含有自定义、非双向或不连续的屏幕连接，请在服务端编辑屏幕布局。");
+  if (m_map.empty() || m_map.size() > deskflow::layout::kMaxScreens || canonical.empty())
+    return result;
+  using Position = std::pair<int, int>;
+  const std::array<Position, 5> delta{{{0, 0}, {-1, 0}, {1, 0}, {0, -1}, {0, 1}}};
+  const Interval full{0, 1};
+  std::map<std::string, Position> positions{{canonical, {0, 0}}};
+  std::queue<std::string> pending;
+  pending.push(canonical);
+  while (!pending.empty()) {
+    const auto name = pending.front();
+    pending.pop();
+    const auto position = positions.at(name);
+    for (const auto &[source, destination] : m_map.at(name)) {
+      const auto direction = static_cast<LayoutDirection>(source.getSide());
+      const auto neighbor = getCanonicalName(destination.getName());
+      if (!deskflow::layout::isCardinal(direction) || neighbor.empty() || neighbor == name ||
+          source.getSide() != destination.getSide() || source.getInterval() != full || destination.getInterval() != full)
+        return result;
+      bool reciprocal = false;
+      for (const auto &[backSource, backDestination] : m_map.at(neighbor)) {
+        if (static_cast<LayoutDirection>(backSource.getSide()) == deskflow::layout::opposite(direction) &&
+            backSource.getSide() == backDestination.getSide() && backSource.getInterval() == full &&
+            backDestination.getInterval() == full && getCanonicalName(backDestination.getName()) == name)
+          reciprocal = true;
+      }
+      if (!reciprocal) return result;
+      const auto offset = delta.at(static_cast<size_t>(direction));
+      const Position target{position.first + offset.first, position.second + offset.second};
+      if (std::abs(target.first) > deskflow::layout::kMaxCoordinate || std::abs(target.second) > deskflow::layout::kMaxCoordinate)
+        return result;
+      if (const auto found = positions.find(neighbor); found != positions.end()) {
+        if (found->second != target) return result;
+      } else {
+        positions.emplace(neighbor, target);
+        pending.push(neighbor);
+      }
+    }
+  }
+  if (positions.size() != m_map.size()) return result;
+  std::set<Position> occupied;
+  for (const auto &[name, position] : positions) {
+    if (!occupied.insert(position).second) return result;
+    // Every touching grid edge must be an actual route. Otherwise a visual
+    // grid would promise a crossing that the running core cannot perform.
+    for (int direction = 1; direction <= 4; ++direction) {
+      const auto offset = delta.at(direction);
+      const Position neighborPosition{position.first + offset.first, position.second + offset.second};
+      for (const auto &[other, otherPosition] : positions) {
+        if (otherPosition == neighborPosition && getNeighbor(name, static_cast<Direction>(direction), 0.5, nullptr) != other)
+          return result;
+      }
+    }
+  }
+  for (const auto &[name, position] : positions)
+    result.screens.push_back({QString::fromStdString(name), position.first, position.second});
+  if (positions.size() == 2) {
+    for (const auto &[name, position] : positions) {
+      if (name == canonical) continue;
+      result.clientName = QString::fromStdString(name);
+      for (int direction = 1; direction <= 4; ++direction)
+        if (position == delta.at(direction)) result.direction = static_cast<LayoutDirection>(direction);
+    }
+  }
+  result.revision = deskflow::layout::revisionFor(result);
+  QString error;
+  if (!deskflow::layout::validateTopology(result, &error)) {
+    result.screens.clear();
+    result.revision.clear();
+    result.error = error;
+    return result;
+  }
+  result.editable = true;
+  result.error.clear();
+  return result;
 }
 
 bool Config::addComputer(const std::string &name)

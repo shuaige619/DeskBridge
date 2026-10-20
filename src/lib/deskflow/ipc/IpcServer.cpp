@@ -63,24 +63,27 @@ void IpcServer::handleReadyRead()
   const auto clientSocket = qobject_cast<QLocalSocket *>(sender());
   LOG_VERBOSE("%s ipc server ready to read data", m_typeName.constData());
 
-  QByteArray data = clientSocket->readAll();
-  if (data.isEmpty()) {
-    LOG_WARN("%s ipc server got empty message", m_typeName.constData());
-    return;
-  }
-
-  // we don't handle incomplete messages yet; each socket read must have delimiters.
-  if (!data.contains('\n')) {
-    LOG_WARN("%s ipc server got incomplete message: %s", m_typeName.constData(), data.constData());
-    return;
-  }
-
-  // each message is delimited by a newline to keep the protocol super simple.
-  while (data.contains('\n')) {
+  m_readBuffers[clientSocket].append(clientSocket->readAll());
+  // Stream reads may split any line. Keep the incomplete suffix, and never
+  // retain a buffer reference across dispatch (which can disconnect a peer).
+  constexpr qsizetype maxMessageSize = 256 * 1024;
+  while (m_readBuffers.contains(clientSocket)) {
+    auto &data = m_readBuffers[clientSocket];
     const auto index = data.indexOf('\n');
-    QByteArray messageData = data.left(index);
+    if (index < 0) {
+      if (data.size() > maxMessageSize) {
+        clientSocket->disconnectFromServer();
+        m_readBuffers.remove(clientSocket);
+      }
+      return;
+    }
+    if (index > maxMessageSize) {
+      clientSocket->disconnectFromServer();
+      m_readBuffers.remove(clientSocket);
+      return;
+    }
+    const auto message = QString::fromUtf8(data.left(index));
     data.remove(0, index + 1);
-    QString message = QString::fromUtf8(messageData);
     processMessage(clientSocket, message);
   }
 }
@@ -90,6 +93,7 @@ void IpcServer::handleDisconnected()
   const auto clientSocket = qobject_cast<QLocalSocket *>(sender());
   LOG_DEBUG("%s ipc server client disconnected", m_typeName.constData());
   m_clients.remove(clientSocket);
+  m_readBuffers.remove(clientSocket);
   clientSocket->deleteLater();
 }
 
@@ -103,6 +107,7 @@ void IpcServer::handleErrorOccurred()
   }
 
   m_clients.remove(clientSocket);
+  m_readBuffers.remove(clientSocket);
   clientSocket->deleteLater();
 }
 

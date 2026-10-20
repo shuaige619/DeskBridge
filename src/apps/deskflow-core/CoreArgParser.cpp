@@ -66,10 +66,9 @@ QString CoreArgParser::helpText() const
 
 QString CoreArgParser::versionText() const
 {
-  const static auto vString = QStringLiteral("%1 v%2, protocol v%3.%4\n%5\n");
+  const static auto vString = QStringLiteral("%1 v%2, protocol v%3.%4\n");
   return vString.arg(
-      kCoreBinName, kDisplayVersion, QString::number(kProtocolMajorVersion), QString::number(kProtocolMinorVersion),
-      kCopyright
+      kCoreBinName, kDisplayVersion, QString::number(kProtocolMajorVersion), QString::number(kProtocolMinorVersion)
   );
 }
 

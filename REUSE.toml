@@ -14,7 +14,6 @@ path = [
  , ".gitattributes"
  , ".gitignore"
  , "cspell.json"
- , "sonar-project.properties"
  , "cmake/vcpkg.json.in"
  , "**/*.md"
  , "docs/**"
@@ -65,3 +64,59 @@ path = [
 ]
 SPDX-FileCopyrightText = "Deskflow Developers"
 SPDX-License-Identifier = "GPL-2.0-only WITH LicenseRef-OpenSSL-Exception"
+
+# Personal fork additions retain their own SPDX license expressions.
+[[annotations]]
+path = [
+  "deploy/linux/build-personal.sh",
+  "src/lib/gui/personal/DeviceIllustration.cpp",
+  "src/lib/gui/personal/DeviceIllustration.h",
+  "src/lib/gui/personal/PersonalStyle.cpp",
+  "src/lib/gui/personal/PersonalStyle.h",
+  "src/lib/gui/personal/PersonalWindow.cpp",
+  "src/lib/gui/personal/PersonalWindow.h",
+  "src/lib/gui/personal/PreferenceChanges.cpp",
+  "src/lib/gui/personal/PreferenceChanges.h",
+  "src/lib/gui/personal/ScreenLayoutPersistence.cpp",
+  "src/lib/gui/personal/ScreenLayoutPersistence.h",
+  "src/lib/gui/personal/ToggleSwitch.cpp",
+  "src/lib/gui/personal/ToggleSwitch.h",
+  "src/lib/platform/OSXShortcutMapper.cpp",
+  "src/lib/platform/OSXShortcutMapper.h",
+  "src/unittests/common/ShortcutMapperTests.cpp",
+  "src/unittests/deskflow/ComputerShortcutTests.cpp",
+  "src/unittests/gui/DeviceIllustrationTests.cpp",
+  "src/unittests/gui/PersonalDialogTests.cpp",
+  "src/unittests/gui/PersonalWindowTests.cpp",
+  "src/unittests/gui/PreferenceChangesTests.cpp",
+  "src/unittests/gui/PreferencesApplyControllerTests.cpp",
+  "src/unittests/gui/ScreenLayoutPersistenceTests.cpp",
+  "src/unittests/gui/ShortcutApplyControllerTests.cpp",
+  "src/unittests/gui/ShortcutApplyControllerTests.h",
+  "src/unittests/gui/config/ScreenLayoutTests.cpp",
+  "tools/prepare_personal_server.py",
+  "tools/test_prepare_personal_server.py",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 DeskBridge contributors"
+
+[[annotations]]
+path = [
+  "VERSION",
+  "deploy/mac/local.shuai.deskbridge.login.plist",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 DeskBridge contributors"
+SPDX-License-Identifier = "MIT"
+
+[[annotations]]
+path = [
+  "src/apps/res/DeskBridge.icns",
+  "src/apps/res/deskbridge.png",
+  "src/apps/res/deskbridge.qrc",
+  "src/apps/res/icons/deskbridge-tray.svg",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 DeskBridge contributors"
+SPDX-License-Identifier = "GPL-2.0-only"
+

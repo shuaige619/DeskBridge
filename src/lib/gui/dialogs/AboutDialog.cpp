@@ -12,18 +12,21 @@
 #include "common/Constants.h"
 #include "common/Settings.h"
 #include "common/VersionInfo.h"
+#include "gui/StyleUtils.h"
 
 #include <QClipboard>
 
 AboutDialog::AboutDialog(QWidget *parent) : QDialog(parent), ui{std::make_unique<Ui::AboutDialog>()}
 {
   ui->setupUi(this);
+  setWindowTitle(windowTitle().arg(kAppName));
+  ui->lblName->setText(kAppName);
 
   const int px = (fontMetrics().height() * 6);
   const QSize pixmapSize(px, px);
   ui->lblIcon->setFixedSize(pixmapSize);
 
-  ui->lblIcon->setPixmap(QPixmap(QIcon::fromTheme(kRevFqdnName).pixmap(QSize().scaled(pixmapSize, Qt::KeepAspectRatio)))
+  ui->lblIcon->setPixmap(QPixmap(deskflow::gui::appIcon().pixmap(QSize().scaled(pixmapSize, Qt::KeepAspectRatio)))
   );
 
   ui->btnCopyVersion->setIcon(QIcon::fromTheme(QIcon::ThemeIcon::EditCopy));
@@ -31,17 +34,6 @@ AboutDialog::AboutDialog(QWidget *parent) : QDialog(parent), ui{std::make_unique
 
   ui->lblVersion->setText(kDisplayVersion);
   ui->lblDescription->setText(kAppDescription);
-  ui->lblCopyright->setText(kCopyright);
-
-  // Use non-breaking space in each awesome dev name so names are not split across lines.
-  QStringList devsNbsp;
-  for (const auto &dev : s_awesomeDevs) {
-    QString withNbsp = dev;
-    devsNbsp.append(withNbsp.replace(" ", QStringLiteral("&nbsp;")));
-  }
-
-  ui->lblImportantDevs->setTextFormat(Qt::RichText);
-  ui->lblImportantDevs->setText(QStringLiteral("%1\n").arg(devsNbsp.join(", ")));
 
   ui->btnOk->setDefault(true);
   connect(ui->btnOk, &QPushButton::clicked, this, &AboutDialog::close);

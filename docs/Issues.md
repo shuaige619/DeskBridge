@@ -1,24 +1,12 @@
-## Important
- If your having an issue. Always try the [continuous](https://github.com/deskflow/deskflow/releases/tag/continuous) version. <br/>
- Many bugs are fixed between releases and yours could be one of them.
+# DeskBridge 问题排查
 
-## Note
- When providing version information always use the copy button on the about dialog.<br/>
- This will include the version as well as the OS Type OS Version, Processor Architecture, and session type
- 
-### If You have Found an issue not fixed by continuous
+记录问题时请包含：
 
-Check the existing [issues](https://github.com/deskflow/deskflow/issues?q=is%3Aissue) to see if someone has reported the issue your experiencing. When searching include closed issues as they may regression, the issue be resolved or be misunderstanding.
+1. 从“关于”窗口复制的版本信息，以及服务端和客户端的系统、版本。
+2. 两台电脑的相邻布局、连接方向、协议和 TLS 设置。
+3. 最短复现步骤、预期行为与实际行为。
+4. 与问题相关的日志；必要时临时开启调试日志，复现后恢复原日志级别。
 
-If a matching or similar issues exists there is no need to comment unless your comment add new information to help solve the bug. An example of a useful comment could be your platform not matching the reporters if an issues is said to be on a specific platform only. We would like to keep the issues comments on topic and uncluttered as some issues can take some time and much discussion to resolve. In most cases you should only :+1: to the issues description.
+请先确认两端运行的应用版本。个人分支的快捷键适配、登录启动和远程布局问题应在本项目中排查。
 
-### Creating new issues
-
- When in doubt start by [asking a question](https://github.com/deskflow/deskflow/discussions/new?category=q-a)
-
-  1. Enable debug level in your log to capture the log the next time the issue happens.
-  1. Create A [New Issue](https://github.com/deskflow/deskflow/issues/new/choose)
-  1. When reporting issues make sure you include the initial version tested as well as the version of the continuous used when testing. Use the about dialogs copy button to get this information.
-  1. Include logs when reporting 
-  1. Use `<details> <summary><h3>TITLE</h3></summary LONG BLOCK TEXT</details>` tags to wrap logs and other lengthy blocks so they are collapse-able
-  1. Fill out the bug form completely, when relevant include info about the both server and clients
+如问题也能在原版共享核心上复现，可参考 [Deskflow 上游已有问题](https://github.com/deskflow/deskflow/issues)。

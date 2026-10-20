@@ -7,6 +7,7 @@
 #pragma once
 
 #include "IpcServer.h"
+#include "common/ScreenLayout.h"
 
 #include <QObject>
 #include <QSet>
@@ -21,10 +22,16 @@ class CoreIpcServer : public IpcServer
 
 public:
   explicit CoreIpcServer(QObject *parent);
+  ~CoreIpcServer() override;
 
   static CoreIpcServer &instance();
+  static CoreIpcServer *existingInstance();
+  void setScreenLayout(const deskflow::layout::Snapshot &snapshot);
+  void refreshLayoutTarget();
 
 private:
+  deskflow::layout::Snapshot m_screenLayout;
+  QSet<QLocalSocket *> m_layoutControllers;
   void processCommand(QLocalSocket *clientSocket, const QString &command, const QStringList &parts) override;
 };
 

@@ -15,14 +15,17 @@
 #include "deskflow/ClipboardTypes.h"
 #include "deskflow/KeyTypes.h"
 #include "deskflow/MouseTypes.h"
+#include "deskflow/ScreenLayoutProtocol.h"
 #include "server/Config.h"
 
 #include <climits>
 #include <map>
 #include <set>
+#include <optional>
 #include <vector>
 
 class BaseClientProxy;
+class ClientProxy;
 class EventQueueTimer;
 class PrimaryClient;
 class InputFilter;
@@ -341,6 +344,13 @@ private:
 
   // remove client from list and detach event handlers for client
   bool removeClient(BaseClientProxy *);
+  deskflow::layout::Snapshot screenLayout() const;
+  void publishScreenLayout();
+  void handleScreenLayoutCommand(const deskflow::layout::Command &command, ClientProxy *origin = nullptr);
+  void finishScreenLayout(bool success, const QString &error = {});
+  void replyScreenLayout(ClientProxy *origin, quint32 requestId, bool success, const QString &error = {});
+  bool reloadScreenLayout(QString &error);
+
 
   // close a client
   void closeClient(BaseClientProxy *, const char *msg);
@@ -400,6 +410,18 @@ private:
 
   IEventQueue *m_events = nullptr;
   size_t m_maximumClipboardSize = INT_MAX;
+  struct PendingLayout
+  {
+    quint32 transactionId;
+    quint32 requestId;
+    deskflow::layout::Snapshot expectedSnapshot;
+    deskflow::layout::Snapshot desiredSnapshot;
+    ClientProxy *origin;
+  };
+  std::optional<PendingLayout> m_pendingLayout;
+  EventQueueTimer *m_layoutTimer = nullptr;
+  quint32 m_nextLayoutTransaction = 0;
+  bool m_layoutControllerAvailable = false;
   ClientListener *m_clientListener = nullptr;
   Stopwatch m_switchTwoTapTimer;
 

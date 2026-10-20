@@ -12,4 +12,6 @@ class SecureUtilsTests : public QObject
 private Q_SLOTS:
   void checkHex();
   void checkArt();
+  void generatedCertificateUsesApplicationIdentity();
+  void independentlyGeneratedCertificatesHaveDifferentFingerprints();
 };

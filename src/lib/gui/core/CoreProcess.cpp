@@ -103,6 +103,37 @@ CoreProcess::CoreProcess(const ServerConfig &serverConfig)
     : m_serverConfig(serverConfig),
       m_daemonIpcClient{new ipc::DaemonIpcClient(this)}
 {
+  m_layoutReconnectTimer.setSingleShot(true);
+  m_layoutReconnectTimer.setInterval(1000);
+  connect(&m_layoutReconnectTimer, &QTimer::timeout, this, [this] {
+    if (!m_layoutReconcileNeeded || !m_serverLayoutTransaction || m_processState != ProcessState::Started)
+      return;
+    if (m_layoutReconnectAttempts++ >= 3) {
+      Q_EMIT layoutSynchronizationUncertain(tr("仍无法确认服务端实际布局。请恢复连接，或停止共享以恢复原布局。"));
+      return;
+    }
+    if (m_coreIpcClient) {
+      if (m_coreIpcClient->isConnected())
+        refreshScreenLayout();
+      else
+        m_coreIpcClient->connectToServer();
+    }
+    if (m_layoutReconcileNeeded)
+      m_layoutReconnectTimer.start();
+  });
+  m_layoutRequestTimer.setSingleShot(true);
+  m_layoutRequestTimer.setInterval(12000);
+  connect(&m_layoutRequestTimer, &QTimer::timeout, this, [this] {
+    if (m_pendingLayoutRequestId) {
+      if (m_serverLayoutTransaction) {
+        onCoreIpcConnectionFailed();
+        return;
+      }
+      m_pendingLayoutRequestId = 0;
+      Q_EMIT layoutRequestFinished(false, tr("等待来源端确认超时，请检查连接后重试。"));
+      refreshScreenLayout();
+    }
+  });
   m_appPath = QStringLiteral("%1/%2").arg(QCoreApplication::applicationDirPath(), kCoreBinName);
   if (!QFile::exists(m_appPath)) {
     qCritical("core server binary does not exist");
@@ -126,14 +157,14 @@ CoreProcess::CoreProcess(const ServerConfig &serverConfig)
 void CoreProcess::onProcessReadyReadStandardOutput()
 {
   if (m_process) {
-    handleLogLines(m_process->readAllStandardOutput());
+    handleProcessOutput(m_process->readAllStandardOutput(), m_stdoutPending);
   }
 }
 
 void CoreProcess::onProcessReadyReadStandardError()
 {
   if (m_process) {
-    handleLogLines(m_process->readAllStandardError());
+    handleProcessOutput(m_process->readAllStandardError(), m_stderrPending);
   }
 }
 
@@ -208,6 +239,9 @@ void CoreProcess::applyLogLevel()
     qDebug() << "setting daemon log level:" << Settings::logLevelText();
     m_daemonIpcClient->sendLogLevel(Settings::logLevelText());
   }
+  if (m_coreIpcClient && m_coreIpcClient->isConnected()) {
+    m_coreIpcClient->sendLogLevel(Settings::logLevelText());
+  }
 }
 
 void CoreProcess::startForegroundProcess(const QStringList &args)
@@ -277,7 +311,8 @@ void CoreProcess::stopForegroundProcess()
   }
 
   if (!m_process) {
-    qCritical("not stopping core desktop process, no process to stop");
+    qDebug("no desktop process remains to stop");
+    setProcessState(ProcessState::Stopped);
     return;
   }
 
@@ -313,6 +348,8 @@ void CoreProcess::stopForegroundProcess()
     m_process->terminate();
   } else {
     qDebug("process is not running, skipping terminate");
+    if (m_process->state() == QProcess::ProcessState::NotRunning)
+      setProcessState(ProcessState::Stopped);
   }
 }
 
@@ -347,6 +384,23 @@ void CoreProcess::handleLogLines(const QString &text)
       continue;
     }
 
+    const auto sourceMarker = QStringLiteral("DeskBridge source OS: ");
+    if (const auto position = line.indexOf(sourceMarker); position >= 0) {
+      const auto name = line.mid(position + sourceMarker.size()).trimmed();
+      auto os = shortcuts::DeviceOS::Unknown;
+      for (const auto candidate : {shortcuts::DeviceOS::MacOS, shortcuts::DeviceOS::Windows, shortcuts::DeviceOS::Linux}) {
+        if (name == shortcuts::deviceOSName(candidate))
+          os = candidate;
+      }
+      setSourceOperatingSystem(os);
+    }
+    const auto mappingMarker = QStringLiteral("DeskBridge modifier remap: ");
+    if (const auto position = line.indexOf(mappingMarker); position >= 0) {
+      const auto value = line.mid(position + mappingMarker.size()).trimmed();
+      if (value == QStringLiteral("active") || value == QStringLiteral("none"))
+        setServerModifierMapping(value == QStringLiteral("active"));
+    }
+
 #if defined(Q_OS_MACOS)
     // HACK: macOS 10.13.4+ spamming error lines in logs making them
     // impossible to read and debug; giving users a red herring.
@@ -372,6 +426,40 @@ void CoreProcess::handleLogLines(const QString &text)
 
     Q_EMIT logLine(line);
   }
+}
+
+void CoreProcess::handleProcessOutput(const QByteArray &bytes, QString &pending)
+{
+  pending += QString::fromUtf8(bytes);
+  const auto complete = std::max(pending.lastIndexOf('\r'), pending.lastIndexOf('\n'));
+  if (complete >= 0) {
+    const auto lines = pending.left(complete + 1);
+    pending.remove(0, complete + 1);
+    // A signal handler may stop the connection and clear the pending buffers.
+    // Extract complete lines first rather than iterating over a mutable buffer.
+    handleLogLines(lines);
+  }
+  // Do not retain an unbounded unterminated output line from a failed core.
+  if (pending.size() > 65536) {
+    Q_EMIT logLine(pending);
+    pending.clear();
+  }
+}
+
+void CoreProcess::setSourceOperatingSystem(shortcuts::DeviceOS os)
+{
+  if (m_sourceOperatingSystem == os)
+    return;
+  m_sourceOperatingSystem = os;
+  Q_EMIT sourceOperatingSystemChanged(os);
+}
+
+void CoreProcess::setServerModifierMapping(bool active)
+{
+  if (m_serverModifierMapping == active)
+    return;
+  m_serverModifierMapping = active;
+  Q_EMIT serverModifierMappingChanged(active);
 }
 
 void CoreProcess::start(std::optional<ProcessMode> processModeOption)
@@ -470,14 +558,18 @@ void CoreProcess::start(std::optional<ProcessMode> processModeOption)
               m_coreIpcClient, &ipc::CoreIpcClient::commandReceived, this, &CoreProcess::onCoreIpcMessageReceived,
               Qt::QueuedConnection
           );
-          connect(m_coreIpcClient, &ipc::CoreIpcClient::connected, this, [] {
+          connect(m_coreIpcClient, &ipc::CoreIpcClient::connected, this, [this] {
             qDebug("connected to core ipc server");
+            applyLogLevel();
+            refreshScreenLayout();
           });
-          connect(m_coreIpcClient, &ipc::CoreIpcClient::connectionFailed, this, [] {
-            qWarning("failed to establish core ipc connection");
-          });
+          connect(m_coreIpcClient, &ipc::CoreIpcClient::connectionFailed, this, &CoreProcess::onCoreIpcConnectionFailed);
           connect(m_coreIpcClient, &ipc::CoreIpcClient::serverShutdown, this, [this, client = m_coreIpcClient] {
             qDebug("core ipc server shut down cleanly");
+            if (m_serverLayoutTransaction) {
+              onCoreIpcConnectionFailed();
+              return;
+            }
             client->deleteLater();
             if (m_coreIpcClient == client)
               m_coreIpcClient = nullptr;
@@ -502,6 +594,10 @@ void CoreProcess::stop(std::optional<ProcessMode> processModeOption)
 {
   QMutexLocker locker(&m_processMutex);
 
+  // A manual stop cancels a scheduled restart even when there is no process
+  // left to terminate (for example, between automatic retry attempts).
+  m_retryTimer.stop();
+
   const auto currentMode = Settings::value(Settings::Core::ProcessMode).value<ProcessMode>();
   const auto processMode = processModeOption.value_or(currentMode);
 
@@ -513,7 +609,10 @@ void CoreProcess::stop(std::optional<ProcessMode> processModeOption)
     m_coreIpcClient = nullptr;
   }
 
-  if (m_processState == ProcessState::Starting) {
+  if (processMode == ProcessMode::Desktop &&
+      (!m_process || m_process->state() == QProcess::ProcessState::NotRunning)) {
+    setProcessState(ProcessState::Stopped);
+  } else if (m_processState == ProcessState::Starting) {
     qDebug("core process is starting, cancelling");
     setProcessState(ProcessState::Stopped);
   } else if (m_processState != ProcessState::Stopped) {
@@ -602,6 +701,24 @@ QPair<bool, QString> CoreProcess::persistServerConfig() const
 
 void CoreProcess::setConnectionState(ConnectionState state)
 {
+  if (state == ConnectionState::Disconnected || state == ConnectionState::Connecting) {
+    setSourceOperatingSystem(shortcuts::DeviceOS::Unknown);
+    setServerModifierMapping(false);
+    m_stdoutPending.clear();
+    m_stderrPending.clear();
+  }
+  if ((state == ConnectionState::Disconnected || state == ConnectionState::Connecting) &&
+      m_mode == Settings::CoreMode::Client) {
+    if (m_screenLayout != deskflow::layout::Snapshot{}) {
+      m_screenLayout = {};
+      Q_EMIT screenLayoutChanged(m_screenLayout);
+    }
+    if (m_pendingLayoutRequestId) {
+      m_pendingLayoutRequestId = 0;
+      m_layoutRequestTimer.stop();
+      Q_EMIT layoutRequestFinished(false, tr("连接已断开，请重新连接后调整布局。"));
+    }
+  }
   if (m_connectionState == state) {
     return;
   }
@@ -612,6 +729,24 @@ void CoreProcess::setConnectionState(ConnectionState state)
 
 void CoreProcess::setProcessState(ProcessState state)
 {
+  if (state == ProcessState::Stopped) {
+    if (m_serverLayoutTransaction) {
+      const auto transaction = *m_serverLayoutTransaction;
+      m_serverLayoutTransaction.reset();
+      m_layoutReconcileNeeded = false;
+      m_layoutReconnectTimer.stop();
+      Q_EMIT layoutApplyFinished(transaction.id, false, tr("服务端已停止，已恢复原布局。"));
+    }
+    if (m_screenLayout != deskflow::layout::Snapshot{}) {
+      m_screenLayout = {};
+      Q_EMIT screenLayoutChanged(m_screenLayout);
+    }
+    if (m_pendingLayoutRequestId) {
+      m_pendingLayoutRequestId = 0;
+      m_layoutRequestTimer.stop();
+      Q_EMIT layoutRequestFinished(false, tr("连接服务已停止，布局更改未确认。"));
+    }
+  }
   if (m_processState == state) {
     return;
   }
@@ -626,6 +761,87 @@ void CoreProcess::setProcessState(ProcessState state)
 
 void CoreProcess::onCoreIpcMessageReceived(const QString &command, const QString &args)
 {
+  using namespace deskflow::layout;
+  if (command == "layoutQueryResult") {
+    const auto object = decodeIpc(args);
+    const auto id = object ? requestIdFromJson(*object) : std::nullopt;
+    if (!object || !id || *id != m_layoutQueryId || !object->value("snapshot").isObject())
+      return;
+    const auto snapshot = snapshotFromJson(object->value("snapshot").toObject());
+    if (snapshot) {
+      if (*snapshot != m_screenLayout) {
+        m_screenLayout = *snapshot;
+        Q_EMIT screenLayoutChanged(m_screenLayout);
+      }
+      if (m_layoutReconcileNeeded)
+        reconcileScreenLayout(*snapshot);
+    }
+    return;
+  }
+  if (command == "screenLayout") {
+    const auto object = decodeIpc(args);
+    if (!object)
+      return;
+    const auto snapshot = snapshotFromJson(*object);
+    if (snapshot && *snapshot != m_screenLayout) {
+      m_screenLayout = *snapshot;
+      Q_EMIT screenLayoutChanged(m_screenLayout);
+    }
+    return;
+  }
+  if (command == "layoutMoveReceived") {
+    const auto object = decodeIpc(args);
+    const auto id = object ? requestIdFromJson(*object) : std::nullopt;
+    const auto move = object && object->value("move").isObject() ? moveFromJson(object->value("move").toObject()) : std::nullopt;
+    if (!id || !move || m_mode != Settings::CoreMode::Server) return;
+    const auto desired = movedSnapshot(m_screenLayout, *move);
+    m_serverLayoutTransaction = ServerLayoutTransaction{*id, m_screenLayout.direction,
+        desired ? desired->direction : deskflow::layout::Direction::Unknown,
+        m_screenLayout.serverName, m_screenLayout.clientName, move->expectedRevision,
+        desired ? desired->revision : QString()};
+    Q_EMIT layoutMoveReceived(*id, *move);
+    return;
+  }
+  if (command == "layoutRequestReceived" || command == "layoutResult" || command == "layoutApplyFinished") {
+    const auto object = decodeIpc(args);
+    if (!object)
+      return;
+    const auto id = requestIdFromJson(*object);
+    if (!id)
+      return;
+    if (command == "layoutRequestReceived") {
+      const auto expected = object->value("expected").toInt(-1);
+      const auto desired = object->value("desired").toInt(-1);
+      if (m_mode == Settings::CoreMode::Server && isCardinal(static_cast<Direction>(expected)) &&
+          isCardinal(static_cast<Direction>(desired)) && object->value("expected").toDouble() == expected &&
+          object->value("desired").toDouble() == desired) {
+        m_serverLayoutTransaction = ServerLayoutTransaction{*id, static_cast<Direction>(expected),
+            static_cast<Direction>(desired), m_screenLayout.serverName, m_screenLayout.clientName};
+        Q_EMIT layoutRequestReceived(*id, static_cast<Direction>(expected), static_cast<Direction>(desired));
+      }
+      return;
+    }
+    if (!object->value("success").isBool() || !object->value("error").isString() ||
+        object->value("error").toString().size() > kMaxErrorLength)
+      return;
+    const bool success = object->value("success").toBool();
+    const auto error = object->value("error").toString();
+    if (command == "layoutApplyFinished") {
+      if (m_mode == Settings::CoreMode::Server) {
+        if (m_serverLayoutTransaction && m_serverLayoutTransaction->id == *id) {
+          m_serverLayoutTransaction.reset();
+          m_layoutReconcileNeeded = false;
+          m_layoutReconnectTimer.stop();
+        }
+        Q_EMIT layoutApplyFinished(*id, success, error);
+      }
+    } else if (*id == m_pendingLayoutRequestId) {
+      m_pendingLayoutRequestId = 0;
+      m_layoutRequestTimer.stop();
+      Q_EMIT layoutRequestFinished(success, error);
+    }
+    return;
+  }
   if (command == "connectionState") {
     const auto metaEnum = QMetaEnum::fromType<ConnectionState>();
     bool ok = false;
@@ -730,4 +946,88 @@ void CoreProcess::retryDaemon()
   m_daemonIpcClient->connectToServer();
 }
 
+} // namespace deskflow::gui
+
+namespace deskflow::gui {
+void CoreProcess::refreshScreenLayout()
+{
+  if (m_coreIpcClient && m_coreIpcClient->isConnected()) {
+    if (++m_layoutQueryId == 0) ++m_layoutQueryId;
+    m_coreIpcClient->sendLayoutCommand(QStringLiteral("layoutQuery"),
+        deskflow::layout::encodeIpc({{"id", static_cast<double>(m_layoutQueryId)}}));
+  }
+}
+
+bool CoreProcess::requestLayout(deskflow::layout::Direction direction)
+{
+  if (!deskflow::layout::isCardinal(direction) || m_screenLayout.screens.size() != 2) return false;
+  return requestLayoutMove({m_screenLayout.clientName,
+      direction == deskflow::layout::Direction::Left ? -1 : direction == deskflow::layout::Direction::Right ? 1 : 0,
+      direction == deskflow::layout::Direction::Above ? -1 : direction == deskflow::layout::Direction::Below ? 1 : 0,
+      m_screenLayout.revision});
+}
+
+bool CoreProcess::requestLayoutMove(const deskflow::layout::Move &move)
+{
+  if (m_screenLayout.protocolVersion != 2 || !m_screenLayout.editable || m_pendingLayoutRequestId ||
+      !m_coreIpcClient || !m_coreIpcClient->isConnected() || !deskflow::layout::movedSnapshot(m_screenLayout, move))
+    return false;
+  if (++m_nextLayoutRequestId == 0) ++m_nextLayoutRequestId;
+  m_pendingLayoutRequestId = m_nextLayoutRequestId;
+  m_coreIpcClient->sendLayoutCommand(QStringLiteral("layoutMove"), deskflow::layout::encodeIpc(
+      {{"id", static_cast<double>(m_pendingLayoutRequestId)}, {"move", deskflow::layout::moveToJson(move)}}));
+  m_layoutRequestTimer.start();
+  return true;
+}
+
+void CoreProcess::onCoreIpcConnectionFailed()
+{
+  qWarning("failed to establish core ipc connection");
+  if (!m_serverLayoutTransaction)
+    return;
+  m_layoutRequestTimer.stop();
+  if (!m_layoutReconcileNeeded) {
+    m_layoutReconcileNeeded = true;
+    m_layoutReconnectAttempts = 0;
+    Q_EMIT layoutSynchronizationUncertain(tr("与服务端的通信中断，正在重新确认实际布局。"));
+  }
+  if (!m_layoutReconnectTimer.isActive() && m_layoutReconnectAttempts <= 3)
+    m_layoutReconnectTimer.start();
+}
+
+void CoreProcess::reconcileScreenLayout(const deskflow::layout::Snapshot &snapshot)
+{
+  if (!m_serverLayoutTransaction || !m_layoutReconcileNeeded)
+    return;
+  const auto transaction = *m_serverLayoutTransaction;
+  const bool fullTopology = !transaction.expectedRevision.isEmpty();
+  const bool knownState = fullTopology
+      ? snapshot.serverName == transaction.serverName &&
+        (snapshot.revision == transaction.expectedRevision || snapshot.revision == transaction.desiredRevision)
+      : snapshot.serverName == transaction.serverName && snapshot.clientName == transaction.clientName &&
+        (snapshot.direction == transaction.expected || snapshot.direction == transaction.desired);
+  if (!knownState) {
+    Q_EMIT layoutSynchronizationUncertain(tr("服务端布局已另外更改，无法自动确认本次调整。请停止共享后重新检查布局。"));
+    return;
+  }
+  const bool applied = fullTopology ? snapshot.revision == transaction.desiredRevision : snapshot.direction == transaction.desired;
+  m_serverLayoutTransaction.reset();
+  m_layoutReconcileNeeded = false;
+  m_layoutReconnectTimer.stop();
+  const auto error = applied ? QString() : tr("服务端未应用本次调整，已恢复原布局。");
+  Q_EMIT layoutApplyFinished(transaction.id, applied, error);
+  if (m_pendingLayoutRequestId) {
+    m_pendingLayoutRequestId = 0;
+    m_layoutRequestTimer.stop();
+    Q_EMIT layoutRequestFinished(applied, error);
+  }
+}
+
+void CoreProcess::completeLayoutRequest(quint32 requestId, bool success, const QString &error)
+{
+  if (requestId && m_mode == Settings::CoreMode::Server && m_coreIpcClient && m_coreIpcClient->isConnected())
+    m_coreIpcClient->sendLayoutCommand(QStringLiteral("layoutComplete"), deskflow::layout::encodeIpc(
+        {{"id", static_cast<double>(requestId)}, {"success", success},
+         {"error", error.left(deskflow::layout::kMaxErrorLength)}}));
+}
 } // namespace deskflow::gui

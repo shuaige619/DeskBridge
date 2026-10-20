@@ -2,6 +2,27 @@
 # SPDX-License-Identifier: MIT
 
 create_test(
+  NAME ShortcutRulesTests
+  DEPENDS common
+  SOURCE ShortcutRulesTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/common"
+)
+
+create_test(
+  NAME ShortcutMapperTests
+  DEPENDS common
+  SOURCE ShortcutMapperTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/common"
+)
+
+create_test(
+  NAME ShiftTapGestureTests
+  DEPENDS common
+  SOURCE ShiftTapGestureTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/common"
+)
+
+create_test(
   NAME SettingsTests
   DEPENDS common
   SOURCE SettingsTests.cpp

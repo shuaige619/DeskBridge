@@ -72,6 +72,8 @@ public:
   bool isAnyMouseButtonDown(uint32_t &buttonID) const override;
   void getCursorCenter(int32_t &x, int32_t &y) const override;
 
+  std::string getForegroundApplication() const override;
+
   // ISecondaryComputer overrides
   void fakeMouseButton(ButtonID id, bool press) override;
   void fakeMouseMove(int32_t x, int32_t y) override;
@@ -167,8 +169,6 @@ private:
 
   // Quartz event tap support
   static CGEventRef handleCGInputEvent(CGEventTapProxy proxy, CGEventType type, CGEventRef event, void *refcon);
-  static CGEventRef
-  handleCGInputEventSecondary(CGEventTapProxy proxy, CGEventType type, CGEventRef event, void *refcon);
 
   // convert CFString to char*
   static char *CFStringRefToUTF8String(CFStringRef aString);

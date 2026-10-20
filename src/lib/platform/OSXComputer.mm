@@ -34,12 +34,15 @@
 #include "platform/OSXScreenSaver.h"
 
 #include <AppKit/NSEvent.h>
+#include <AppKit/NSRunningApplication.h>
+#include <AppKit/NSWorkspace.h>
 #include <AvailabilityMacros.h>
 #include <IOKit/hidsystem/event_status_driver.h>
 #include <dispatch/dispatch.h>
 #include <libproc.h>
 #include <mach-o/dyld.h>
 #include <math.h>
+#include <utility>
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
@@ -319,6 +322,15 @@ void OSXComputer::getCursorCenter(int32_t &x, int32_t &y) const
   y = m_yCenter;
 }
 
+std::string OSXComputer::getForegroundApplication() const
+{
+  @autoreleasepool {
+    NSString *bundleID = [[[NSWorkspace sharedWorkspace] frontmostApplication] bundleIdentifier];
+    const char *utf8 = [bundleID UTF8String];
+    return utf8 ? utf8 : "";
+  }
+}
+
 uint32_t OSXComputer::registerHotKey(KeyID key, KeyModifierMask mask)
 {
   // get mac virtual key and modifier mask matching deskflow key and mask
@@ -463,8 +475,8 @@ void OSXComputer::postMouseEvent(CGPoint &pos) const
 
   int8_t button = m_buttonState.getFirstButtonDown();
   if (button != -1) {
-    MouseButtonEventMapType thisButtonType = MouseButtonEventMap[button];
-    type = thisButtonType[kMouseButtonDragged];
+    const auto &thisButtonType = MouseButtonEventMap[button];
+    type = thisButtonType.at(kMouseButtonDragged);
   }
 
   CGEventRef event = CGEventCreateMouseEvent(nullptr, type, pos, static_cast<CGMouseButton>(button));
@@ -552,8 +564,8 @@ void OSXComputer::fakeMouseButton(ButtonID id, bool press)
 
   LOG_VERBOSE("faking mouse button id: %d press: %s", index, press ? "pressed" : "released");
 
-  MouseButtonEventMapType thisButtonMap = MouseButtonEventMap[index];
-  CGEventType type = thisButtonMap[state];
+  const auto &thisButtonMap = MouseButtonEventMap[index];
+  CGEventType type = thisButtonMap.at(state);
 
   CGEventRef event = CGEventCreateMouseEvent(nullptr, type, pos, static_cast<CGMouseButton>(index));
 
@@ -714,13 +726,9 @@ void OSXComputer::enable()
     // warp the mouse to the cursor center
     fakeMouseMove(m_xCenter, m_yCenter);
 
-    // there may be a better way to do this, but we register an event handler even if we're
-    // not on the primary display (acting as a client). This way, if a local event comes in
-    // (either keyboard or mouse), we can make sure to show the cursor if we've hidden it.
-    m_eventTapPort = CGEventTapCreate(
-        kCGHIDEventTap, kCGHeadInsertEventTap, kCGEventTapOptionDefault, kCGEventMaskForAllEvents,
-        handleCGInputEventSecondary, this
-    );
+    // Clients only inject remote input. The former secondary tap returned every
+    // event unchanged, adding an unnecessary active filter and run-loop hop.
+    return;
   }
 
   if (m_eventTapPort) {
@@ -750,6 +758,10 @@ void OSXComputer::enable()
 
 void OSXComputer::disable()
 {
+  if (!m_isPrimary && m_keyState) {
+    // Disconnect can disable a client without a normal screen-leave message.
+    fakeAllKeysUp();
+  }
   showCursor();
 
   // FIXME -- stop watching jump zones, stop capturing input
@@ -1650,29 +1662,6 @@ EventHotKeyRef OSXComputer::HotKeyItem::getRef() const
 bool OSXComputer::HotKeyItem::operator<(const HotKeyItem &x) const
 {
   return (m_keycode < x.m_keycode || (m_keycode == x.m_keycode && m_mask < x.m_mask));
-}
-
-// Quartz event tap support for the secondary display. This makes sure that we
-// will show the cursor if a local event comes in while deskflow has the cursor
-// off the computer.
-CGEventRef
-OSXComputer::handleCGInputEventSecondary(CGEventTapProxy proxy, CGEventType type, CGEventRef event, void *refcon)
-{
-  // this fix is really screwing with the correct show/hide behavior. it
-  // should be tested better before reintroducing.
-  return event;
-
-  OSXComputer *computer = (OSXComputer *)refcon;
-  if (computer->m_cursorHidden && type == kCGEventMouseMoved) {
-
-    CGPoint pos = CGEventGetLocation(event);
-    if (pos.x != computer->m_xCenter || pos.y != computer->m_yCenter) {
-
-      LOG_DEBUG("show cursor on secondary, type=%d pos=%d,%d", type, pos.x, pos.y);
-      computer->showCursor();
-    }
-  }
-  return event;
 }
 
 // Quartz event tap support

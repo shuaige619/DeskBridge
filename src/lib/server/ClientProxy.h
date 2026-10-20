@@ -8,6 +8,7 @@
 #pragma once
 
 #include "server/BaseClientProxy.h"
+#include "common/ScreenLayout.h"
 
 namespace deskflow {
 class IStream;
@@ -30,6 +31,14 @@ public:
 
   //! @name manipulators
   //@{
+
+  void sendScreenLayout(const deskflow::layout::Snapshot &snapshot, quint32 requestId = 0, bool success = true);
+  bool layoutSubscribed() const { return m_layoutSubscribed; }
+  void setLayoutSubscribed(bool value) { m_layoutSubscribed = value; }
+  bool layoutAdvertised() const { return m_layoutAdvertised; }
+  void setLayoutAdvertised(bool value) { m_layoutAdvertised = value; m_layoutVersion = value ? 1 : 0; }
+  int layoutVersion() const { return m_layoutVersion; }
+  void setLayoutVersion(int version) { m_layoutVersion = version; m_layoutAdvertised = version != 0; }
 
   //! Disconnect
   /*!
@@ -78,4 +87,7 @@ public:
 
 private:
   deskflow::IStream *m_stream;
+  bool m_layoutSubscribed = false;
+  bool m_layoutAdvertised = false;
+  int m_layoutVersion = 0;
 };

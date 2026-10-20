@@ -6,6 +6,7 @@
 add_library(client STATIC
   Client.cpp
   Client.h
+  InputTimingMetrics.h
   ServerProxy.cpp
   ServerProxy.h
   ServerProxy1_7.cpp

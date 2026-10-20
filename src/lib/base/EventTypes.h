@@ -233,6 +233,10 @@ enum class EventTypes : uint32_t
   /// This event is sent whenever a clipboard chunk is transferred.
   ClipboardSending,
 
+  // DeskBridge layout IPC commands and negotiated remote requests.
+  ScreenLayoutCommand,
+  ScreenLayoutRequest,
+
   /// Start libei
   EIConnected,
 

@@ -16,6 +16,9 @@ class ClientProxyTests : public QObject
 
 private Q_SLOTS:
   void initTestCase();
+  void screenLayout_requiresNegotiationAndUsesConnectedAlias();
+  void screenTopology_threePeersReceiveSameGraphWithOwnIdentity();
+  void screenTopology_requestsAreNegotiatedAndBounded();
   void keyDown_data();
   void keyDown();
   void keyRepeat_data();

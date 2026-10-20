@@ -4,6 +4,8 @@
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>English</string>
+	<key>CFBundleDisplayName</key>
+	<string>@BUNDLE_DISPLAY_NAME@</string>
 	<key>CFBundleExecutable</key>
 	<string>@BUNDLE_EXECUTABLE_NAME@</string>
 	<key>CFBundleGetInfoString</key>
@@ -28,8 +30,6 @@
 	<string>@CMAKE_PROJECT_VERSION@</string>
 	<key>CSResourcesFileMapped</key>
 	<true/>
-	<key>NSHumanReadableCopyright</key>
-	<string>@BUNDLE_COPYRIGHT@</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.utilities</string>
 
@@ -41,7 +41,7 @@
 
 	<!-- Local Lan Entitlements -->
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>This app uses local network permissions for communication between a Deskflow server and clients.</string>
+	<string>@BUNDLE_DISPLAY_NAME@ uses the local network to share keyboard and mouse input with compatible Deskflow computers.</string>
 	<key>com.apple.security.networking.local</key>
 	<true/>
 

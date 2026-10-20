@@ -1,22 +1,7 @@
-# Security Policy
+# 安全说明
 
-## Supported Versions
+DeskBridge 是基于 Deskflow 的个人分支，本项目未配置独立的公开安全更新或漏洞报告渠道。
 
-The latest minor release is supported and receives security updates:
-https://github.com/deskflow/deskflow/releases
+涉及个人分支代码的问题应在本项目中排查；不要在公开问题或日志中附带证书私钥等敏感信息。
 
-## Reporting a Vulnerability
-
-Please report vulnerabilities privately, not on the public issue tracker.
-
-Use GitHub's private reporting form:
-https://github.com/deskflow/deskflow/security/advisories/new
-
-That opens a draft advisory only visible to maintainers. Include a proof of concept
-if you have one.
-
-## What happens next
-
-We land the fix on master, ship it in a continuous build, then publish the advisory
-and proof of concept together, so a fixed build is always available at the point the
-details go public. You will be credited in the advisory unless you ask otherwise.
+如漏洞可在未经修改的 Deskflow 上复现，可使用 [上游私密漏洞报告入口](https://github.com/deskflow/deskflow/security/advisories/new)。上游的支持范围和发布时间以其说明为准。

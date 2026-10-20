@@ -7,3 +7,10 @@ create_test(
   SOURCE ComputerTests.cpp
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
 )
+
+create_test(
+  NAME ScreenLayoutTests
+  DEPENDS gui
+  SOURCE ScreenLayoutTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)

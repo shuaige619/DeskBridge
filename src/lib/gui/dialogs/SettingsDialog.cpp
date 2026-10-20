@@ -14,26 +14,44 @@
 #include "common/I18N.h"
 #include "common/Settings.h"
 #include "gui/TlsUtility.h"
+#include "gui/StyleUtils.h"
 #include "gui/core/NetworkMonitor.h"
 #include "gui/widgets/SettingsDialogButtonBox.h"
 
 #include <QComboBox>
+#include <QClipboard>
+#include <QDialogButtonBox>
 #include <QDir>
 #include <QFileDialog>
 #include <QMessageBox>
+#include <QPlainTextEdit>
+#include <QPushButton>
+#include <QScrollBar>
+#include <QTextDocument>
+#include <QVBoxLayout>
 
 using namespace deskflow::gui;
 
-SettingsDialog::SettingsDialog(QWidget *parent, const ServerConfig &serverConfig)
+namespace {
+const auto kCodexAppId = QStringLiteral("com.openai.codex");
+const auto kLarkAppId = QStringLiteral("com.electron.lark");
+} // namespace
+
+SettingsDialog::SettingsDialog(QWidget *parent, const ServerConfig &serverConfig, QTextDocument *logDocument)
     : QDialog(parent),
       ui{std::make_unique<Ui::SettingsDialog>()},
       m_serverConfig(serverConfig),
+      m_logDocument(logDocument),
       m_buttonBox{new SettingsDialogButtonBox(this)}
 {
 
   ui->setupUi(this);
+  ui->widgetLogActions->setVisible(m_logDocument != nullptr);
   layout()->addWidget(m_buttonBox);
   ui->tabWidget->setCurrentIndex(0);
+  ui->groupClipboardShortcuts->setVisible(
+      deskflow::platform::isMac() && QString::fromLatin1(kRuntimeId) == QString::fromLatin1(kAppId)
+  );
 
   // these are enabled by the control next to them
   ui->lineCommandEnter->setEnabled(false);
@@ -52,8 +70,8 @@ SettingsDialog::SettingsDialog(QWidget *parent, const ServerConfig &serverConfig
   ui->comboTlsKeyLength->setItemIcon(1, QIcon::fromTheme(QIcon::ThemeIcon::SecurityHigh));
   ui->lblTlsCertInfo->setFixedSize(28, 28);
 
-  ui->rbIconMono->setIcon(QIcon::fromTheme(QStringLiteral("%1-symbolic").arg(kRevFqdnName)));
-  ui->rbIconColorful->setIcon(QIcon::fromTheme(kRevFqdnName));
+  ui->rbIconMono->setIcon(QIcon::fromTheme(QStringLiteral("%1-symbolic").arg(kAppIconName)));
+  ui->rbIconColorful->setIcon(QIcon::fromTheme(kAppIconName));
 
   // force the first tab, since qt creator sets the active tab as the last one
   // the developer was looking at, and it's easy to accidentally save that.
@@ -105,12 +123,18 @@ void SettingsDialog::initConnections() const
   connect(ui->cbRunExitCommand, &QCheckBox::toggled, ui->lineCommandExit, &QLineEdit::setEnabled);
 
   connect(ui->groupSecurity, &QGroupBox::toggled, this, &SettingsDialog::updateTlsControlsEnabled);
+  connect(ui->groupClipboardShortcuts, &QGroupBox::toggled, this, &SettingsDialog::setButtonBoxEnabledButtons);
+  connect(ui->cbClipboardCodex, &QCheckBox::toggled, this, &SettingsDialog::setButtonBoxEnabledButtons);
+  connect(ui->cbClipboardLark, &QCheckBox::toggled, this, &SettingsDialog::setButtonBoxEnabledButtons);
   connect(ui->groupService, &QGroupBox::toggled, this, &SettingsDialog::updateControls);
   connect(ui->btnClearAllSettings, &QPushButton::clicked, this, &SettingsDialog::resetAllSettings);
   connect(ui->btnTlsRegenCert, &QPushButton::clicked, this, &SettingsDialog::regenCertificates);
   connect(ui->comboTlsKeyLength, &QComboBox::currentIndexChanged, this, &SettingsDialog::updateRequestedKeySize);
   connect(ui->btnTlsCertPath, &QPushButton::clicked, this, &SettingsDialog::browseCertificatePath);
   connect(ui->btnBrowseLog, &QPushButton::clicked, this, &SettingsDialog::browseLogPath);
+  connect(ui->btnViewLog, &QPushButton::clicked, this, &SettingsDialog::showLog);
+  connect(ui->btnCopyLog, &QPushButton::clicked, this, &SettingsDialog::copyLog);
+  connect(ui->btnShowFingerprint, &QPushButton::clicked, this, &SettingsDialog::fingerprintRequested);
   connect(ui->groupLogToFile, &QGroupBox::toggled, this, &SettingsDialog::setLogToFile);
   connect(ui->comboLogLevel, &QComboBox::currentIndexChanged, this, &SettingsDialog::logLevelChanged);
   connect(ui->comboLanguage, &QComboBox::currentTextChanged, this, [](const QString &lang) {
@@ -187,6 +211,40 @@ void SettingsDialog::setLogToFile(bool logToFile)
   ui->widgetLogFilename->setEnabled(logToFile);
 }
 
+void SettingsDialog::showLog()
+{
+  if (!m_logDocument) return;
+  QDialog dialog(this);
+  dialog.setObjectName(QStringLiteral("runtimeLogDialog"));
+  dialog.setWindowTitle(tr("运行日志"));
+  dialog.resize(760, 480);
+  dialog.setMinimumSize(480, 300);
+  auto *layout = new QVBoxLayout(&dialog);
+  auto *log = new QPlainTextEdit(&dialog);
+  log->setObjectName(QStringLiteral("runtimeLog"));
+  log->setReadOnly(true);
+  log->setLineWrapMode(QPlainTextEdit::NoWrap);
+  log->setFont(fixedFont());
+  log->setPlaceholderText(tr("连接后，运行日志将显示在这里。"));
+  // Share the existing bounded log so reopening also shows earlier errors.
+  log->setDocument(m_logDocument);
+  log->moveCursor(QTextCursor::End);
+  log->horizontalScrollBar()->setValue(0);
+  layout->addWidget(log);
+  auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
+  auto *copy = buttons->addButton(tr("复制日志"), QDialogButtonBox::ActionRole);
+  copy->setAutoDefault(false);
+  connect(copy, &QPushButton::clicked, this, &SettingsDialog::copyLog);
+  connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+  layout->addWidget(buttons);
+  dialog.exec();
+}
+
+void SettingsDialog::copyLog() const
+{
+  if (m_logDocument) QApplication::clipboard()->setText(m_logDocument->toPlainText());
+}
+
 void SettingsDialog::resetAllSettings()
 {
   auto result = QMessageBox::question(
@@ -200,6 +258,7 @@ void SettingsDialog::resetAllSettings()
 
 void SettingsDialog::updateText()
 {
+  ui->lblSettingsPath->setText(tr("设置位置：%1").arg(Settings::settingsPath()));
   const auto logLevels = LogLevel::logLevelNames().count();
   const QStringList toolTips = {tr("Required messages"),        tr("Non-fatal errors"), tr("General warnings"),
                                 tr("General events [Default]"), tr("Debug entries"),    tr("Verbose debug output")};
@@ -220,6 +279,11 @@ void SettingsDialog::updateText()
 
 void SettingsDialog::accept()
 {
+  if (deskflow::platform::isMac()) {
+    Settings::setValue(Settings::Client::ClipboardShortcuts, ui->groupClipboardShortcuts->isChecked());
+    Settings::setValue(Settings::Client::ClipboardShortcutApps, clipboardShortcutApps());
+  }
+
   Settings::setValue(Settings::Core::Port, ui->sbPort->value());
   Settings::setValue(Settings::Core::Interface, ui->comboInterface->currentData());
   Settings::setValue(Settings::Log::Level, ui->comboLogLevel->currentData());
@@ -253,8 +317,32 @@ void SettingsDialog::accept()
   QDialog::accept();
 }
 
+QStringList SettingsDialog::clipboardShortcutApps() const
+{
+  // Retain any additional app rules configured outside this dialog.
+  auto apps = m_clipboardShortcutApps;
+  const auto updateApp = [&apps](const QString &app, bool enabled) {
+    if (!enabled)
+      apps.removeAll(app);
+    else if (!apps.contains(app))
+      apps.append(app);
+  };
+  updateApp(kCodexAppId, ui->cbClipboardCodex->isChecked());
+  updateApp(kLarkAppId, ui->cbClipboardLark->isChecked());
+  return apps;
+}
+
+void SettingsDialog::setClipboardShortcutApps(const QStringList &apps)
+{
+  m_clipboardShortcutApps = apps;
+  ui->cbClipboardCodex->setChecked(apps.contains(kCodexAppId));
+  ui->cbClipboardLark->setChecked(apps.contains(kLarkAppId));
+}
+
 void SettingsDialog::loadFromConfig()
 {
+  ui->groupClipboardShortcuts->setChecked(Settings::value(Settings::Client::ClipboardShortcuts).toBool());
+  setClipboardShortcutApps(Settings::value(Settings::Client::ClipboardShortcutApps).toStringList());
   ui->sbPort->setValue(Settings::value(Settings::Core::Port).toInt());
   ui->comboLogLevel->setCurrentIndex(
       ui->comboLogLevel->findData(Settings::logLevelText(), Qt::UserRole, Qt::MatchFixedString)
@@ -305,6 +393,7 @@ void SettingsDialog::loadFromConfig()
   qDebug() << "load from config done";
 
   updateControls();
+  setButtonBoxEnabledButtons();
 }
 
 void SettingsDialog::updateTlsControls()
@@ -382,6 +471,7 @@ void SettingsDialog::updateControls()
   ui->btnClearAllSettings->setEnabled(writable);
   ui->cbAutoUpdate->setEnabled(writable);
   ui->cbPreventSleep->setEnabled(writable);
+  ui->groupClipboardShortcuts->setEnabled(writable);
   ui->lineTlsCertPath->setEnabled(writable);
   ui->comboTlsKeyLength->setEnabled(writable);
   ui->rbCloseToTray->setEnabled(writable);
@@ -421,8 +511,13 @@ bool SettingsDialog::isModified() const
 {
   const auto processMode = Settings::value(Settings::Core::ProcessMode).value<Settings::ProcessMode>();
   const bool ignoreInterface = !m_interfaceSetOnLoad && (ui->comboInterface->currentIndex() == 0);
+  const bool clipboardShortcutsModified =
+      deskflow::platform::isMac() &&
+      (ui->groupClipboardShortcuts->isChecked() != Settings::value(Settings::Client::ClipboardShortcuts).toBool() ||
+       clipboardShortcutApps() != Settings::value(Settings::Client::ClipboardShortcutApps).toStringList());
 
   bool modified =
+      clipboardShortcutsModified ||
       (ui->sbPort->value() != Settings::value(Settings::Core::Port).toInt()) ||
       (ui->comboLogLevel->currentData() != Settings::logLevelText()) ||
       (ui->groupLogToFile->isChecked() != Settings::value(Settings::Log::ToFile).toBool()) ||
@@ -456,8 +551,13 @@ bool SettingsDialog::isDefault() const
   const auto processMode = Settings::defaultValue(Settings::Core::ProcessMode).value<Settings::ProcessMode>();
   const auto logLevelIndex =
       static_cast<int>(LogLevel::fromOption(Settings::defaultValue(Settings::Log::Level).toString()));
+  const bool clipboardShortcutsDefault =
+      !deskflow::platform::isMac() ||
+      (ui->groupClipboardShortcuts->isChecked() == Settings::defaultValue(Settings::Client::ClipboardShortcuts).toBool() &&
+       clipboardShortcutApps() == Settings::defaultValue(Settings::Client::ClipboardShortcutApps).toStringList());
 
   return (
+      clipboardShortcutsDefault &&
       (ui->sbPort->value() == Settings::defaultValue(Settings::Core::Port).toInt()) &&
       (ui->comboLogLevel->currentIndex() == logLevelIndex) &&
       (ui->groupLogToFile->isChecked() == Settings::defaultValue(Settings::Log::ToFile).toBool()) &&
@@ -486,6 +586,8 @@ bool SettingsDialog::isDefault() const
 
 void SettingsDialog::resetToDefault()
 {
+  ui->groupClipboardShortcuts->setChecked(Settings::defaultValue(Settings::Client::ClipboardShortcuts).toBool());
+  setClipboardShortcutApps(Settings::defaultValue(Settings::Client::ClipboardShortcutApps).toStringList());
   ui->sbPort->setValue(Settings::defaultValue(Settings::Core::Port).toInt());
   ui->comboLogLevel->setCurrentIndex(
       static_cast<int>(LogLevel::fromOption(Settings::defaultValue(Settings::Log::Level).toString()))

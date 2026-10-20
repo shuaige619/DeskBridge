@@ -2,6 +2,13 @@
 # SPDX-License-Identifier: MIT
 
 create_test(
+  NAME CoreProcessStopTests
+  DEPENDS gui
+  SOURCE CoreProcessStopTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+
+create_test(
   NAME NetworkMonitorTests
   DEPENDS gui
   SOURCE NetworkMonitorTests.cpp

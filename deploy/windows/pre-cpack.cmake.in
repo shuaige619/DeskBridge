@@ -6,14 +6,14 @@ if(CPACK_GENERATOR MATCHES 7Z|ZIP)
   set(${PORTABLE_LIBS} "")
   foreach(ITEM ${_TEMP_LIST})
     string(REPLACE "*" " " _ITEM ${ITEM})
-    file(COPY ${_ITEM} DESTINATION ${CPACK_TEMPORARY_INSTALL_DIRECTORY})
+    file(COPY "${_ITEM}" DESTINATION "${CPACK_TEMPORARY_INSTALL_DIRECTORY}")
   endforeach()
-  file(WRITE ${CPACK_TEMPORARY_INSTALL_DIRECTORY}/settings/Deskflow.conf " ")
-  file(REMOVE ${CPACK_TEMPORARY_INSTALL_DIRECTORY}/deskflow-daemon.exe)
-  file(WRITE ${CPACK_TEMPORARY_INSTALL_DIRECTORY}/README.txt
-" Portable Deskflow: @CMAKE_PROJECT_VERSION@
+  file(WRITE "${CPACK_TEMPORARY_INSTALL_DIRECTORY}/settings/@CMAKE_PROJECT_PROPER_NAME@.conf" " ")
+  file(REMOVE "${CPACK_TEMPORARY_INSTALL_DIRECTORY}/deskflow-daemon.exe")
+  file(WRITE "${CPACK_TEMPORARY_INSTALL_DIRECTORY}/README.txt"
+" Portable @CMAKE_PROJECT_PROPER_NAME@: @CMAKE_PROJECT_VERSION@
 
-  The portable version must have the settings/Deskflow.conf file to save settings, or it will try to use the system settings location.
+  Keep settings/@CMAKE_PROJECT_PROPER_NAME@.conf beside the app to use portable settings and desktop mode.
   The portable version does not include the daemon, so the client will not work at UAC prompts or the login screen.
 ")
 endif()

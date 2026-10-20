@@ -10,6 +10,7 @@
 
 #include "common/Constants.h"
 #include "common/Hotkey.h"
+#include "common/ScreenLayout.h"
 #include "gui/config/ComputerConfig.h"
 #include "gui/config/ComputerList.h"
 
@@ -56,6 +57,9 @@ public:
   QString configFile() const;
   bool useExternalConfig() const;
   void addClient(const QString &clientName);
+  deskflow::layout::Snapshot screenLayout() const;
+  bool setScreenLayout(deskflow::layout::Direction direction, QString *error = nullptr);
+  bool moveScreen(const deskflow::layout::Move &move, QString *error = nullptr);
 
 private:
   void recall();

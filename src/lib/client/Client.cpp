@@ -16,6 +16,7 @@
 #include "client/ServerProxy1_8.h"
 #include "common/NetworkProtocol.h"
 #include "common/Settings.h"
+#include "common/SourceDeviceOptions.h"
 #include "deskflow/Clipboard.h"
 #include "deskflow/Computer.h"
 #include "deskflow/DeskflowException.h"
@@ -315,6 +316,7 @@ void Client::screensaver(bool activate)
 
 void Client::resetOptions()
 {
+  setSourceOperatingSystem(deskflow::shortcuts::DeviceOS::Unknown);
   m_relativeMouseMoves = false;
   m_hasRelativeRestorePosition = false;
   m_computer->resetOptions();
@@ -323,32 +325,26 @@ void Client::resetOptions()
 void Client::setOptions(const OptionsList &options)
 {
   if (options.size() % 2 != 0) {
+    setSourceOperatingSystem(deskflow::shortcuts::DeviceOS::Unknown);
     LOG_ERR("options are the incorrect size, can not process them");
     return;
   }
 
-  for (auto index = options.begin(); index != options.end(); ++index) {
-    const OptionID id = *index;
+  setSourceOperatingSystem(deskflow::shortcuts::sourceOSFromOptions(options));
+  for (size_t index = 0; index < options.size(); index += 2) {
+    const OptionID id = options[index];
+    const auto value = options[index + 1];
     if (id == kOptionClipboardSharing) {
-      index++;
-      if (index != options.end()) {
-        if (!*index) {
-          LOG_INFO("clipboard sharing disabled by server");
-        }
-        m_enableClipboard = *index;
+      if (!value) {
+        LOG_INFO("clipboard sharing disabled by server");
       }
+      m_enableClipboard = value;
     } else if (id == kOptionClipboardSharingSize) {
-      index++;
-      if (index != options.end()) {
-        m_maximumClipboardSize = *index;
-      }
+      m_maximumClipboardSize = value;
     } else if (id == kOptionRelativeMouseMoves) {
-      index++;
-      if (index != options.end()) {
-        m_relativeMouseMoves = (*index != 0);
-        if (m_relativeMouseMoves && m_ready && !m_hasRelativeRestorePosition) {
-          saveRelativeRestorePosition();
-        }
+      m_relativeMouseMoves = (value != 0);
+      if (m_relativeMouseMoves && m_ready && !m_hasRelativeRestorePosition) {
+        saveRelativeRestorePosition();
       }
     }
   }
@@ -359,6 +355,12 @@ void Client::setOptions(const OptionsList &options)
   }
 
   m_computer->setOptions(options);
+}
+
+void Client::setSourceOperatingSystem(deskflow::shortcuts::DeviceOS os)
+{
+  m_computer->setSourceOperatingSystem(os);
+  LOG_INFO("DeskBridge source OS: %s", qPrintable(deskflow::shortcuts::deviceOSName(os)));
 }
 
 void Client::saveRelativeRestorePosition()
@@ -539,6 +541,7 @@ void Client::cleanupConnection()
 
 void Client::cleanupComputer()
 {
+  setSourceOperatingSystem(deskflow::shortcuts::DeviceOS::Unknown);
   if (m_server != nullptr) {
     if (m_ready) {
       m_computer->disable();

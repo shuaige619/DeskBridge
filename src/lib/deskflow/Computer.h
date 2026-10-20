@@ -12,7 +12,12 @@
 #include "deskflow/KeyTypes.h"
 #include "deskflow/MouseTypes.h"
 #include "deskflow/OptionTypes.h"
+#include "common/ShortcutMapper.h"
+#include "common/ShiftTapGesture.h"
+#include "common/KeyModifierID.h"
 
+#include <map>
+#include <functional>
 #include <string>
 
 class IClipboard;
@@ -29,7 +34,8 @@ primary or secondary computer.
 class Computer : public IComputer
 {
 public:
-  Computer(IPlatformComputer *platformComputer, IEventQueue *events);
+  using ShiftTapClock = std::function<shortcuts::ShiftTapGesture::Timestamp()>;
+  Computer(IPlatformComputer *platformComputer, IEventQueue *events, ShiftTapClock shiftTapClock = {});
   Computer(Computer const &) = delete;
   Computer(Computer &&) = delete;
   ~Computer() override;
@@ -177,6 +183,8 @@ public:
   */
   void setOptions(const OptionsList &options);
 
+  void setSourceOperatingSystem(shortcuts::DeviceOS source);
+
   //! Set clipboard sequence number
   /*!
   Sets the sequence number to use in subsequent clipboard events.
@@ -291,6 +299,17 @@ protected:
   void leaveSecondary();
 
 private:
+  void configureShortcuts();
+  shortcuts::ShortcutMapper m_shortcutMapper;
+  mutable shortcuts::ShiftTapGesture m_shiftTapGesture;
+  ShiftTapClock m_shiftTapClock;
+  shortcuts::DeviceOS m_sourceOperatingSystem = shortcuts::DeviceOS::Unknown;
+  bool m_shortcutConfigLoaded = false;
+  QString m_shortcutConfigRaw;
+  QStringList m_shortcutLegacyApps;
+  bool m_shortcutLegacyEnabled = false;
+  std::map<KeyModifierID, KeyModifierID> m_remoteModifierMap;
+
   // our platform dependent computer
   IPlatformComputer *m_computer = nullptr;
 

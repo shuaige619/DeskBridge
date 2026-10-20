@@ -40,6 +40,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Fallback for when git can not be found
+option(DESKBRIDGE_PERSONAL_BUILD "Build the independent personal DeskBridge app" ${CMAKE_HOST_APPLE})
 set(DESKFLOW_VERSION_MAJOR 1)
 set(DESKFLOW_VERSION_MINOR 27)
 set(DESKFLOW_VERSION_PATCH 0)
@@ -81,6 +82,21 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/.git)
   endif()
 endif()
 
+# Personal release archives and Git checkouts must use the same version.
+# Keep upstream's Git-derived versioning when the personal build is disabled.
+if(DESKBRIDGE_PERSONAL_BUILD AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" DESKBRIDGE_RELEASE_VERSION)
+  string(STRIP "${DESKBRIDGE_RELEASE_VERSION}" DESKBRIDGE_RELEASE_VERSION)
+  if(NOT DESKBRIDGE_RELEASE_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$")
+    message(FATAL_ERROR "VERSION must contain a four-part release version")
+  endif()
+  string(REPLACE "." ";" DESKBRIDGE_VERSION_PARTS "${DESKBRIDGE_RELEASE_VERSION}")
+  list(GET DESKBRIDGE_VERSION_PARTS 0 DESKFLOW_VERSION_MAJOR)
+  list(GET DESKBRIDGE_VERSION_PARTS 1 DESKFLOW_VERSION_MINOR)
+  list(GET DESKBRIDGE_VERSION_PARTS 2 DESKFLOW_VERSION_PATCH)
+  list(GET DESKBRIDGE_VERSION_PARTS 3 DESKFLOW_VERSION_TWEAK)
+endif()
+
 #generate vcpkg file if needed
 if(WIN32)
     if(VCPKG_QT)
@@ -101,9 +117,21 @@ project(
 # Define Additional "PROJECT" vars for packaging and metadata
 set(CMAKE_PROJECT_PROPER_NAME "Deskflow")
 set(CMAKE_PROJECT_VENDOR "${CMAKE_PROJECT_PROPER_NAME} Devs")
-set(CMAKE_PROJECT_COPYRIGHT "(C) 2024-2026 ${CMAKE_PROJECT_VENDOR}")
 set(CMAKE_PROJECT_CONTACT "${CMAKE_PROJECT_PROPER_NAME} <maintainers@deskflow.org>")
 set(CMAKE_PROJECT_REV_FQDN "org.deskflow.deskflow")
+
+# Keep upstream resource and wire-protocol names separate from app identity.
+set(DESKFLOW_RUNTIME_ID "${CMAKE_PROJECT_NAME}")
+if(DESKBRIDGE_PERSONAL_BUILD)
+  set(CMAKE_PROJECT_PROPER_NAME "DeskBridge")
+  set(CMAKE_PROJECT_REV_FQDN "local.shuai.deskbridge")
+  set(DESKFLOW_RUNTIME_ID "${CMAKE_PROJECT_REV_FQDN}")
+endif()
+if(APPLE OR DESKBRIDGE_PERSONAL_BUILD)
+  set(DESKFLOW_GUI_TARGET "${CMAKE_PROJECT_PROPER_NAME}")
+else()
+  set(DESKFLOW_GUI_TARGET "${CMAKE_PROJECT_NAME}")
+endif()
 
 #Unset the vars used in the project call
 unset(DESKFLOW_VERSION_MAJOR)
@@ -230,6 +258,14 @@ elseif(BUILD_OSX_BUNDLE)
   set(CMAKE_INSTALL_BINDIR ${CMAKE_PROJECT_PROPER_NAME}.app/Contents/MacOS)
   set(CMAKE_INSTALL_LICENSE_DIR ${CMAKE_PROJECT_PROPER_NAME}.app/Contents/Resources)
   set(CMAKE_INSTALL_DOCDIR ${CMAKE_INSTALL_LICENSE_DIR}/docs)
+elseif(DESKBRIDGE_PERSONAL_BUILD)
+  # Keep the compatible core filename in a private directory on Unix so a
+  # personal installation never replaces /usr/bin/deskflow-core.
+  set(CMAKE_INSTALL_BINDIR ${CMAKE_INSTALL_LIBEXECDIR}/deskbridge)
+  set(CMAKE_INSTALL_LICENSE_DIR ${CMAKE_INSTALL_DATADIR}/licenses/deskbridge)
+  set(CMAKE_INSTALL_DOCDIR ${CMAKE_INSTALL_BINDIR}/../share/doc/deskflow)
+  set(CMAKE_INSTALL_I18N_DIR ${CMAKE_INSTALL_BINDIR}/translations)
+  set(CMAKE_INSTALL_MANDIR ${CMAKE_INSTALL_BINDIR}/man)
 else()
   set(CMAKE_INSTALL_LICENSE_DIR ${CMAKE_INSTALL_DATADIR}/licenses/${CMAKE_PROJECT_NAME})
   set(CMAKE_INSTALL_I18N_DIR ${CMAKE_INSTALL_DATADIR}/${CMAKE_PROJECT_NAME}/translations)
@@ -252,6 +288,11 @@ install(
   DESTINATION ${CMAKE_INSTALL_LICENSE_DIR}
   RENAME LICENSE_EXCEPTION
 )
+
+if(WIN32 AND DESKBRIDGE_PERSONAL_BUILD)
+  install(FILES README-WINDOWS.md README-PERSONAL.md DESTINATION ${CMAKE_INSTALL_DOCDIR})
+  install(DIRECTORY LICENSES DESTINATION ${CMAKE_INSTALL_LICENSE_DIR})
+endif()
 
 if(BUILD_INSTALLER)
     add_subdirectory(deploy)

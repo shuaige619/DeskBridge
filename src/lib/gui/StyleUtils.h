@@ -17,6 +17,15 @@
 
 namespace deskflow::gui {
 
+inline QIcon appIcon()
+{
+#if DESKBRIDGE_PERSONAL_BUILD
+  return QIcon(QStringLiteral(":/deskbridge.png"));
+#else
+  return QIcon::fromTheme(kAppIconName);
+#endif
+}
+
 /**
  * @brief Detects dark mode in a universal manner (all Qt versions).
  * Until better platform support is added, it's more reliable to use the old way (compare text and window lightness),
@@ -42,8 +51,8 @@ inline QString iconMode()
 inline void updateIconTheme()
 {
   // Sets the fallback icon path and fallback theme
-  const auto themeName = QStringLiteral("%1-%2").arg(kAppId, iconMode());
-  if (QIcon::themeName().isEmpty() || QIcon::themeName().startsWith(kAppId))
+  const auto themeName = QStringLiteral("%1-%2").arg(kIconThemeId, iconMode());
+  if (QIcon::themeName().isEmpty() || QIcon::themeName().startsWith(kIconThemeId))
     QIcon::setThemeName(themeName);
   else
     QIcon::setFallbackThemeName(themeName);

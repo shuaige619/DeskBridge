@@ -91,11 +91,11 @@ int main(int argc, char *argv[])
   }
 
   if (parser.isSet(versionOption)) {
-    QTextStream(stdout) << kHeader << kCopyright << Qt::endl;
+    QTextStream(stdout) << kHeader;
     return s_exitSuccess;
   }
 
-  const auto shmId = QStringLiteral("%1-gui").arg(kAppId);
+  const auto shmId = QStringLiteral("%1-gui").arg(kRuntimeId);
   // Create a shared memory segment with a unique key
   // This is to prevent a new instance from running if one is already running
   QSharedMemory sharedMemory(shmId);
@@ -125,6 +125,10 @@ int main(int argc, char *argv[])
 
   // Sets the fallback icon path and fallback theme
   updateIconTheme();
+
+#if DESKBRIDGE_PERSONAL_BUILD
+  app.setWindowIcon(appIcon());
+#endif
 
   qInstallMessageHandler(deskflow::gui::messages::messageHandler);
   qInfo("%s v%s", kAppName, kDisplayVersion);

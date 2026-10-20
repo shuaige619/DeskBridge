@@ -9,6 +9,7 @@
 #pragma once
 
 #include "base/BaseException.h"
+#include "common/ScreenLayout.h"
 #include "base/String.h"
 #include "deskflow/IPlatformComputer.h"
 #include "deskflow/OptionTypes.h"
@@ -281,6 +282,8 @@ public:
   Returns true iff \c name is a valid computer name.
   */
   bool isValidComputerName(const std::string &name) const;
+
+  deskflow::layout::Snapshot screenLayout(const std::string &serverName) const;
 
   //! Get beginning (canonical) computer name iterator
   const_iterator begin() const;

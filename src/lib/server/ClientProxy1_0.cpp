@@ -12,9 +12,11 @@
 #include "base/Log.h"
 #include "deskflow/DeskflowException.h"
 #include "deskflow/ProtocolUtil.h"
+#include "deskflow/ScreenLayoutProtocol.h"
 #include "io/IStream.h"
 
 #include <cstring>
+#include <memory>
 
 //
 // ClientProxy1_0
@@ -165,6 +167,42 @@ bool ClientProxy1_0::parseHandshakeMessage(const uint8_t *code)
 
 bool ClientProxy1_0::parseMessage(const uint8_t *code)
 {
+  if (memcmp(code, kMsgQScreenLayoutV2, 4) == 0 && layoutVersion() == 2) {
+    using namespace deskflow::layout;
+    const auto object = readWireObject(getStream());
+    auto request = std::make_unique<Command>();
+    const auto kind = object.value("kind").toString();
+    if (kind == QStringLiteral("query") && object.value("id").isDouble() &&
+        object.value("id").toDouble(-1) == 0 && object.size() == 2) {
+      request->kind = Command::Kind::Query;
+    } else if (kind == QStringLiteral("move") && object.size() == 3 && object.value("move").isObject()) {
+      const auto id = requestIdFromJson(object);
+      const auto move = moveFromJson(object.value("move").toObject());
+      if (!id || !move) throw BadClientException("invalid topology move");
+      request->kind = Command::Kind::Move;
+      request->id = *id;
+      request->move = *move;
+    } else {
+      throw BadClientException("invalid topology request");
+    }
+    setLayoutSubscribed(true);
+    m_events->addEvent(Event(EventTypes::ScreenLayoutRequest, getEventTarget(), request.release()));
+    return true;
+  }
+  if (memcmp(code, kMsgQScreenLayout, 4) == 0 && layoutVersion() == 1) {
+    uint32_t id, expected, desired;
+    if (!ProtocolUtil::readf(getStream(), kMsgQScreenLayout + 4, &id, &expected, &desired) ||
+        !deskflow::layout::validRequest(id, expected, desired))
+      throw BadClientException("invalid layout request");
+    setLayoutSubscribed(true);
+    auto *request = new deskflow::layout::Command;
+    request->kind = id == 0 ? deskflow::layout::Command::Kind::Query : deskflow::layout::Command::Kind::Request;
+    request->id = id;
+    request->expected = static_cast<deskflow::layout::Direction>(expected);
+    request->desired = static_cast<deskflow::layout::Direction>(desired);
+    m_events->addEvent(Event(EventTypes::ScreenLayoutRequest, getEventTarget(), request));
+    return true;
+  }
   if (memcmp(code, kMsgDInfo, 4) == 0) {
     if (recvInfo()) {
       m_events->addEvent(Event(EventTypes::ComputerShapeChanged, getEventTarget()));
