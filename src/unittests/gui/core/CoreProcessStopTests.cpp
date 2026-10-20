@@ -4,9 +4,9 @@
  */
 #include "CoreProcessStopTests.h"
 
-// Preload every dependency so the access override affects only CoreProcess.
-// This seeds in-memory lifecycle states without adding production test hooks,
-// starting a subprocess, connecting IPC or injecting any system input.
+// Friend access seeds in-memory lifecycle states without starting a subprocess,
+// connecting IPC or injecting any system input. Rewriting private as public
+// would change the decorated method names on MSVC and break library linking.
 #include "common/Enums.h"
 #include "common/Settings.h"
 #include "common/ShortcutRules.h"
@@ -16,9 +16,7 @@
 #include <QObject>
 #include <QProcess>
 #include <QTimer>
-#define private public
 #include "gui/core/CoreProcess.h"
-#undef private
 
 #include <QCoreApplication>
 #include <QFile>

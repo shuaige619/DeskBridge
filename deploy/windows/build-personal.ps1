@@ -130,7 +130,7 @@ try {
         "-DDESKBRIDGE_THIRD_PARTY_LICENSE_DIR:PATH=$($noticesDirectory.Replace([char]92, [char]47))",
         "-DDEPLOYQT:FILEPATH=$QtRoot/bin/windeployqt.exe"
     )
-    Invoke-Checked 'cmake' @('--build', $BuildDirectory, '--config', 'Release', '--parallel', '8')
+    Invoke-Checked 'cmake' @('--build', $BuildDirectory, '--config', 'Release', '--parallel', '8', '--', '-k', '0')
     if (-not $SkipTests) {
         # Mock/state/widget tests only; never native input/clipboard suites.
         Invoke-IsolatedTests $BuildDirectory

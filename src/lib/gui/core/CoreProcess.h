@@ -19,6 +19,8 @@
 #include <QProcess>
 #include <QTimer>
 
+class CoreProcessStopTests;
+
 namespace deskflow::gui {
 
 namespace ipc {
@@ -28,6 +30,10 @@ class DaemonIpcClient;
 
 class CoreProcess : public QObject
 {
+  // Keep the class declaration identical in the library and test translation
+  // units; MSVC encodes a method's access level in its linker symbol.
+  friend class ::CoreProcessStopTests;
+
   using ConnectionState = deskflow::core::ConnectionState;
   using ProcessMode = Settings::ProcessMode;
   using ProcessState = deskflow::core::ProcessState;
