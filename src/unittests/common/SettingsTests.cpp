@@ -262,7 +262,11 @@ void SettingsTests::checkCleanComputerName()
 
 void SettingsTests::checkClipboardShortcutPreferences()
 {
+#ifdef Q_OS_MACOS
   const QStringList defaultApps{QStringLiteral("com.openai.codex"), QStringLiteral("com.electron.lark")};
+#else
+  const QStringList defaultApps;
+#endif
   QVERIFY(Settings::value(Settings::Client::ClipboardShortcuts).toBool());
   QCOMPARE(Settings::value(Settings::Client::ClipboardShortcutApps).toStringList(), defaultApps);
 
