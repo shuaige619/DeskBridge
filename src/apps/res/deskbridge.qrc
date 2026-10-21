@@ -2,5 +2,6 @@
     <qresource prefix="/">
         <file>deskbridge.png</file>
         <file>icons/deskbridge-tray.svg</file>
+        <file>icons/deskbridge-symbolic.svg</file>
     </qresource>
 </RCC>

@@ -4,12 +4,12 @@ Mac 客户端的主页拖放布局需要来源端也运行配套 DeskBridge。�
 
 ## Linux x86_64 发行包
 
-发行包为 `DeskBridge-1.27.0.1-linux-x86_64.flatpak`，已在 Ubuntu 22.04.5 和 KDE Platform 6.11 上构建验证。安装发行版提供的 Flatpak 后，添加 Flathub 以取得匹配运行时，核对发行页 `SHA256SUMS`，再安装本地 bundle：
+Linux 图标修复包为 `DeskBridge-1.27.0.2-linux-x86_64.flatpak`，使用 Ubuntu 22.04.5 和 KDE Platform 6.11 构建。个人版的托盘和启动器使用独立的桌桥图标；单色图标不可用时回退为桌桥彩色图标。安装发行版提供的 Flatpak 后，添加 Flathub 以取得匹配运行时，核对发行页 `SHA256SUMS`，再安装本地 bundle：
 
 ```bash
 flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
 flatpak install --user flathub org.kde.Platform//6.11
-flatpak install --user ./DeskBridge-1.27.0.1-linux-x86_64.flatpak
+flatpak install --user ./DeskBridge-1.27.0.2-linux-x86_64.flatpak
 ```
 
 完成配置检查、保存并退出原共享进程后，从图形会话运行：
@@ -40,7 +40,7 @@ libxkbcommon-dev libei-dev libportal-dev help2man
 ./deploy/linux/build-personal.sh --test
 ```
 
-`--test` 运行 12 组隔离测试，覆盖布局、配置事务、服务端发布、传输、客户端协议、同用户 IPC 和设置，以及 11 项服务端配置迁移测试。默认输出为 `build/personal-linux/bin/DeskBridge` 和 `build/personal-linux/bin/deskflow-core`。可省略 `--test` 只构建，或指定构建目录和额外 CMake 参数：
+`--test` 运行 13 组隔离测试，覆盖布局、配置事务、服务端发布、传输、客户端协议、同用户 IPC、设置和托盘图标选择，以及 11 项服务端配置迁移测试。默认输出为 `build/personal-linux/bin/DeskBridge` 和 `build/personal-linux/bin/deskflow-core`。可省略 `--test` 只构建，或指定构建目录和额外 CMake 参数：
 
 ```bash
 ./deploy/linux/build-personal.sh --test build/personal-linux -DQt6_DIR=/path/to/Qt/lib/cmake/Qt6

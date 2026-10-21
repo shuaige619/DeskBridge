@@ -26,6 +26,20 @@ inline QIcon appIcon()
 #endif
 }
 
+// Linux desktop themes can recolor a named symbolic icon. A missing theme
+// resource must retain the full-color application icon, including its alpha.
+inline QIcon linuxPersonalTrayIcon(bool symbolic)
+{
+  if (!symbolic)
+    return appIcon();
+
+  const auto name = QStringLiteral("%1-symbolic").arg(kRevFqdnName);
+  auto icon = QIcon::fromTheme(name, appIcon());
+  if (icon.name() == name)
+    icon.setIsMask(true);
+  return icon;
+}
+
 /**
  * @brief Detects dark mode in a universal manner (all Qt versions).
  * Until better platform support is added, it's more reliable to use the old way (compare text and window lightness),

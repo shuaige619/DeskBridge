@@ -1415,6 +1415,10 @@ void MainWindow::setTrayIcon()
   m_trayIcon->setIcon(personalIcon);
   return;
 #endif
+#if DESKBRIDGE_PERSONAL_BUILD && defined(Q_OS_LINUX)
+  m_trayIcon->setIcon(deskflow::gui::linuxPersonalTrayIcon(Settings::value(Settings::Gui::SymbolicTrayIcon).toBool()));
+  return;
+#endif
 
   static const auto fallbackPath = QStringLiteral(":/icons/%1-%2/apps/64/%3.svg");
 

@@ -4,6 +4,16 @@
 add_subdirectory(config)
 add_subdirectory(core)
 
+if(DESKBRIDGE_PERSONAL_BUILD)
+  create_test(
+    NAME TrayIconTests
+    DEPENDS gui
+    SOURCE TrayIconTests.cpp
+    WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+  )
+  target_sources(TrayIconTests PRIVATE ../../apps/res/deskbridge.qrc)
+endif()
+
 create_test(
   NAME AdvancedPageTests
   DEPENDS gui
