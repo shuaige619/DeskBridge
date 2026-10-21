@@ -113,6 +113,7 @@ SPDX-License-Identifier = "MIT"
 path = [
   "src/apps/res/DeskBridge.icns",
   "src/apps/res/deskbridge.png",
+  "deploy/linux/deskbridge.png",
   "src/apps/res/deskbridge.qrc",
   "src/apps/res/icons/deskbridge-tray.svg",
 ]
