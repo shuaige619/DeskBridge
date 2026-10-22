@@ -32,11 +32,7 @@ QVariantMap expandedConnectionIdentityChanges(const QVariantMap &changes)
   QVariantMap expanded = changes;
   const QString oldPrefix = QStringLiteral("computer_%1/").arg(oldName);
   const QString newPrefix = QStringLiteral("computer_%1/").arg(newName);
-#ifdef Q_OS_WIN
-  constexpr auto settingsCaseSensitivity = Qt::CaseInsensitive;
-#else
   constexpr auto settingsCaseSensitivity = Qt::CaseSensitive;
-#endif
   const bool sameGroup = oldPrefix.compare(newPrefix, settingsCaseSensitivity) == 0;
   const QRegularExpression screenName(QStringLiteral("^internalConfig/screens/[0-9]+/name$"));
   const QRegularExpression actionTarget(QStringLiteral(

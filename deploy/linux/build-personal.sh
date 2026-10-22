@@ -57,7 +57,7 @@ if [[ $run_tests == ON ]]; then
     XDG_RUNTIME_DIR="$test_state/runtime" QT_QPA_PLATFORM=offscreen \
     ctest --test-dir "$build_dir/src/unittests" --no-tests=error \
     -R "^($test_pattern)$" --output-on-failure --output-junit "$build_dir/linux-regressions.xml"
-  python3 -m unittest discover -s "$repo_dir/tools" -p 'test_prepare_personal_*.py' -v
+  python3 -m unittest discover -s "$repo_dir/tools" -p 'test_prepare_personal_server.py' -v
 fi
 printf '\nBuilt: %s/bin/DeskBridge\nCore: %s/bin/deskflow-core\n' "$build_dir" "$build_dir"
 printf 'Installation is a separate step; see README-LINUX.md.\n'

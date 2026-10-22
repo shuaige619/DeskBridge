@@ -168,10 +168,7 @@ private Q_SLOTS:
     QStringList expected{newName, QStringLiteral("target")};
     expected.sort();
     QCOMPARE(actual, expected);
-#ifdef Q_OS_WIN
-    if (newName.compare(QStringLiteral("source"), Qt::CaseInsensitive) != 0)
-#endif
-      QVERIFY(!Settings::proxy().contains(Settings::Computer::Name.arg(QStringLiteral("source"))));
+    QVERIFY(!Settings::proxy().contains(Settings::Computer::Name.arg(QStringLiteral("source"))));
     QCOMPARE(Settings::value(Settings::Computer::ModifierCtrl.arg(newName)).toString(), QStringLiteral("meta"));
     QCOMPARE(Settings::value(Settings::Computer::Aliases.arg(newName)).toStringList(),
              QStringList{QStringLiteral("source-alias")});
@@ -188,6 +185,33 @@ private Q_SLOTS:
     const auto &actions = std::as_const(reloaded).hotkeys().first().actions();
     QCOMPARE(actions.at(0).switchComputerName(), newName);
     QCOMPARE(actions.at(1).typeComputerNames(), (QStringList{newName, QStringLiteral("target")}));
+
+    // QSettings shares caches between objects using the same filename. Reopen
+    // an actual disk copy at a new path to verify the serialized migration.
+    const QString copiedPath = Settings::settingsFile() + QStringLiteral(".reopened");
+    QVERIFY(QFile::copy(Settings::settingsFile(), copiedPath));
+    QSettings disk(copiedPath, QSettings::IniFormat);
+    QStringList persistedNames;
+    for (const auto &group : disk.childGroups()) {
+      if (!group.startsWith(QStringLiteral("computer_")))
+        continue;
+      const auto name = disk.value(group + QStringLiteral("/name")).toString();
+      if (!name.isEmpty())
+        persistedNames.append(name);
+    }
+    persistedNames.sort();
+    QCOMPARE(persistedNames, expected);
+    QVERIFY(!disk.contains(Settings::Computer::Name.arg(QStringLiteral("source"))));
+    QCOMPARE(disk.value(Settings::Computer::ModifierCtrl.arg(newName)).toString(), QStringLiteral("meta"));
+    QCOMPARE(disk.value(Settings::Computer::Aliases.arg(newName)).toStringList(),
+             QStringList{QStringLiteral("source-alias")});
+    QCOMPARE(disk.value(QStringLiteral("computer_%1/future/nestedOption").arg(newName)).toString(),
+             QStringLiteral("keep"));
+    QCOMPARE(disk.value(Settings::Computer::ModifierCtrl.arg(QStringLiteral("target"))).toString(),
+             QStringLiteral("alt"));
+    QCOMPARE(disk.value(Settings::Computer::Aliases.arg(QStringLiteral("target"))).toStringList(),
+             QStringList{QStringLiteral("target-alias")});
+    QCOMPARE(disk.status(), QSettings::NoError);
   }
 
   void normalizationMatchesStoredNameAndInvalidRequestsDoNotExpand()
