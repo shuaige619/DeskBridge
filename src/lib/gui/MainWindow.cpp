@@ -20,6 +20,7 @@
 
 #include "common/PlatformInfo.h"
 #include "common/Settings.h"
+#include "common/SettingsIniTransaction.h"
 #include "common/UrlConstants.h"
 #include "common/VersionInfo.h"
 #include "gui/Messages.h"
@@ -352,10 +353,7 @@ void MainWindow::setupPersonalUi()
   connect(transaction, &personal::ShortcutApplyController::applyingChanged, this, [this] { refreshPersonalUi(); });
   personal::PreferencesApplyController::Operations operations{
       [](const QStringList &keys) {
-        QVariantMap previous;
-        for (const auto &key : keys)
-          previous.insert(key, Settings::proxy().value(key));
-        return previous;
+        return deskflow::settings_detail::snapshotStoredValues(Settings::proxy().get(), keys);
       },
       [this](const QVariantMap &changes, QString *error) { return writePersonalPreferences(changes, error); },
       [this](const QVariantMap &previous, QString *error) { return restorePersonalPreferences(previous, error); },

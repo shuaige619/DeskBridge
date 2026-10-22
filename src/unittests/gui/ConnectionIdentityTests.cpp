@@ -2,6 +2,7 @@
 #include "common/Hotkey.h"
 #include "common/KeyboardModifier.h"
 #include "common/Settings.h"
+#include "common/SettingsIniTransaction.h"
 #include "gui/config/ServerConfig.h"
 #include "gui/personal/ConnectionIdentity.h"
 
@@ -125,50 +126,91 @@ private Q_SLOTS:
     QVERIFY(!Settings::proxy().contains(Settings::Computer::ModifierCtrl.arg(QStringLiteral("source"))));
   }
 
+  void rollbackRestoresMissingDestinationKeysAndTheOriginalIdentity_data()
+  {
+    QTest::addColumn<QString>("newName");
+    QTest::newRow("ordinary") << QStringLiteral("renamed");
+    QTest::newRow("case-only") << QStringLiteral("SOURCE");
+  }
+
   void rollbackRestoresMissingDestinationKeysAndTheOriginalIdentity()
   {
-    const auto expanded =
-        expandedConnectionIdentityChanges({{Settings::Core::ComputerName, QStringLiteral("renamed")}});
-    QVariantMap previous;
-    for (auto it = expanded.cbegin(); it != expanded.cend(); ++it)
-      previous.insert(it.key(), Settings::proxy().value(it.key()));
-    QVERIFY(!previous.value(Settings::Computer::Name.arg(QStringLiteral("renamed"))).isValid());
+    QFETCH(QString, newName);
+    const QString originalPath = Settings::settingsFile() + QStringLiteral(".original");
+    QVERIFY(QFile::copy(Settings::settingsFile(), originalPath));
+    const QSettings originalDisk(originalPath, QSettings::IniFormat);
+    const auto originalKeys = originalDisk.allKeys();
+    const auto original = deskflow::settings_detail::snapshotStoredValues(originalDisk, originalKeys);
+    const auto expanded = expandedConnectionIdentityChanges({{Settings::Core::ComputerName, newName}});
+    const auto previous = deskflow::settings_detail::snapshotStoredValues(Settings::proxy().get(), expanded.keys());
+    QVERIFY(!previous.value(Settings::Computer::Name.arg(newName)).isValid());
     QVERIFY(Settings::trySetValues(expanded));
-    QVERIFY(Settings::proxy().contains(Settings::Computer::Name.arg(QStringLiteral("renamed"))));
+    QVERIFY(Settings::proxy().contains(Settings::Computer::Name.arg(newName)));
     QVERIFY(Settings::trySetValues(previous));
     QCOMPARE(Settings::value(Settings::Core::ComputerName).toString(), QStringLiteral("source"));
     for (auto it = previous.cbegin(); it != previous.cend(); ++it)
       if (!it.value().isValid())
-        QVERIFY2(!Settings::proxy().contains(it.key()), qPrintable(it.key()));
+        QVERIFY2(!Settings::proxy().get().allKeys().contains(it.key(), Qt::CaseSensitive), qPrintable(it.key()));
     ServerConfig reloaded;
     QVERIFY(reloaded.computerExists(QStringLiteral("source")));
-    QVERIFY(!reloaded.computerExists(QStringLiteral("renamed")));
+    QVERIFY(!reloaded.computerExists(newName));
     QCOMPARE(std::as_const(reloaded).hotkeys().first().actions().at(0).switchComputerName(), QStringLiteral("source"));
     QCOMPARE(
         std::as_const(reloaded).hotkeys().first().actions().at(1).typeComputerNames(),
         (QStringList{QStringLiteral("source"), QStringLiteral("target")})
     );
+    const QString copiedPath = Settings::settingsFile() + QStringLiteral(".rollback");
+    QVERIFY(QFile::copy(Settings::settingsFile(), copiedPath));
+    const QSettings disk(copiedPath, QSettings::IniFormat);
+    QCOMPARE(disk.allKeys(), originalKeys);
+    QCOMPARE(deskflow::settings_detail::snapshotStoredValues(disk, originalKeys), original);
   }
 
   void renameKeepsExactlyTheConfiguredDevices_data()
   {
-    QTest::addColumn<QString>("newName");
-    QTest::newRow("new-name") << QStringLiteral("renamed");
-    QTest::newRow("case-only") << QStringLiteral("SOURCE");
+    QTest::addColumn<QStringList>("renames");
+    QTest::addColumn<bool>("legacySpelling");
+    QTest::newRow("new-name") << QStringList{QStringLiteral("renamed")} << false;
+    QTest::newRow("case-only") << QStringList{QStringLiteral("SOURCE")} << false;
+    QTest::newRow("case-only-then-new-name") << QStringList{QStringLiteral("SOURCE"), QStringLiteral("renamed")} << false;
+    QTest::newRow("two-case-only-renames") << QStringList{QStringLiteral("SOURCE"), QStringLiteral("sOuRcE")} << false;
+#ifdef Q_OS_WIN
+    QTest::newRow("existing-group-already-has-desired-spelling") << QStringList{QStringLiteral("source")} << true;
+#endif
   }
 
   void renameKeepsExactlyTheConfiguredDevices()
   {
-    QFETCH(QString, newName);
-    const auto expanded = expandedConnectionIdentityChanges({{Settings::Core::ComputerName, newName}});
-    QVERIFY(Settings::trySetValues(expanded));
+    QFETCH(QStringList, renames);
+    QFETCH(bool, legacySpelling);
+    if (legacySpelling) {
+      auto changes = expandedConnectionIdentityChanges({{Settings::Core::ComputerName, QStringLiteral("SOURCE")}});
+      for (auto it = changes.begin(); it != changes.end();) {
+        if (it.key().startsWith(QStringLiteral("computer_")))
+          it = changes.erase(it);
+        else
+          ++it;
+      }
+      changes.insert(Settings::Computer::Name.arg(QStringLiteral("source")), QStringLiteral("SOURCE"));
+      QVERIFY(Settings::trySetValues(changes));
+    }
+    const auto originalName = Settings::value(Settings::Core::ComputerName).toString();
+    const auto newName = renames.last();
+    for (const auto &name : renames) {
+      const auto expanded = expandedConnectionIdentityChanges({{Settings::Core::ComputerName, name}});
+      QVERIFY(Settings::trySetValues(expanded));
+      ServerConfig saved;
+      saved.commit();
+      Settings::save(false);
+    }
     auto actual = Settings::knownComputers();
     actual.removeAll(QString());
     actual.sort();
     QStringList expected{newName, QStringLiteral("target")};
     expected.sort();
     QCOMPARE(actual, expected);
-    QVERIFY(!Settings::proxy().contains(Settings::Computer::Name.arg(QStringLiteral("source"))));
+    const auto oldNameKey = Settings::Computer::Name.arg(originalName);
+    QVERIFY(!Settings::proxy().get().allKeys().contains(oldNameKey, Qt::CaseSensitive));
     QCOMPARE(Settings::value(Settings::Computer::ModifierCtrl.arg(newName)).toString(), QStringLiteral("meta"));
     QCOMPARE(Settings::value(Settings::Computer::Aliases.arg(newName)).toStringList(),
              QStringList{QStringLiteral("source-alias")});
@@ -201,7 +243,7 @@ private Q_SLOTS:
     }
     persistedNames.sort();
     QCOMPARE(persistedNames, expected);
-    QVERIFY(!disk.contains(Settings::Computer::Name.arg(QStringLiteral("source"))));
+    QVERIFY(!disk.allKeys().contains(oldNameKey, Qt::CaseSensitive));
     QCOMPARE(disk.value(Settings::Computer::ModifierCtrl.arg(newName)).toString(), QStringLiteral("meta"));
     QCOMPARE(disk.value(Settings::Computer::Aliases.arg(newName)).toStringList(),
              QStringList{QStringLiteral("source-alias")});

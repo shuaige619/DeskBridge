@@ -31,6 +31,7 @@ private Q_SLOTS:
   void checkCleanComputerName();
   void checkCleanComputerName_LongName();
   void checkClearState();
+  void iniCaseMigrationKeepsEqualValuesAndRestoresKeySpelling();
 
 private:
   QTemporaryDir m_initialProfile;

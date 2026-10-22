@@ -5,6 +5,7 @@
  */
 
 #include "SettingsTests.h"
+#include "common/SettingsIniTransaction.h"
 
 #include <QFile>
 #include <QScopeGuard>
@@ -334,6 +335,55 @@ void SettingsTests::checkClearState()
   QVERIFY(Settings::value(Settings::Client::XdpRestoreToken).toString().isEmpty());
   QVERIFY(Settings::value(Settings::Server::XdpRestoreToken).toString().isEmpty());
   QCOMPARE(Settings::value(Settings::Core::ComputerName).toString(), QStringLiteral("keep-my-connection-settings"));
+}
+
+void SettingsTests::iniCaseMigrationKeepsEqualValuesAndRestoresKeySpelling()
+{
+  using namespace deskflow::settings_detail;
+  QTemporaryDir files;
+  QVERIFY(files.isValid());
+  const auto previousFile = Settings::settingsFile();
+  const auto restore = qScopeGuard([&] { Settings::setSettingsFile(previousFile); });
+  Settings::setSettingsFile(files.filePath(QStringLiteral("settings.conf")));
+  const QString oldName = QStringLiteral("computer_source/name");
+  const QString newName = QStringLiteral("computer_SOURCE/name");
+  const QString oldOption = QStringLiteral("computer_source/future/nested");
+  const QString newOption = QStringLiteral("computer_SOURCE/future/nested");
+  QVERIFY(Settings::trySetValues({{oldName, QStringLiteral("source")}, {oldOption, QStringLiteral("keep")}}));
+  const QVariantMap changes{{oldName, QVariant()}, {newName, QStringLiteral("SOURCE")},
+                            {oldOption, QVariant()}, {newOption, QStringLiteral("keep")}};
+  // Explicit sensitivity exercises the algorithm's Windows branch on every
+  // host. Native Windows CI separately verifies QSettings's actual semantics.
+  QCOMPARE(caseChangeWrites(changes, Qt::CaseInsensitive), (QSet<QString>{newName, newOption}));
+  QVERIFY(caseChangeWrites(changes, Qt::CaseSensitive).isEmpty());
+  const auto previous = snapshotStoredValues(Settings::proxy().get(), changes.keys());
+  const auto explicitSnapshot = snapshotStoredValues(Settings::proxy().get(), changes.keys(), Qt::CaseInsensitive);
+  QVERIFY(!explicitSnapshot.value(newName).isValid());
+  QCOMPARE(explicitSnapshot.value(oldOption).toString(), QStringLiteral("keep"));
+  QVERIFY(Settings::trySetValues(changes));
+  const auto forwardPath = files.filePath(QStringLiteral("forward.conf"));
+  QVERIFY(QFile::copy(Settings::settingsFile(), forwardPath));
+  const QSettings forward(forwardPath, QSettings::IniFormat);
+  QVERIFY(!forward.allKeys().contains(oldName, Qt::CaseSensitive));
+  QVERIFY(!forward.allKeys().contains(oldOption, Qt::CaseSensitive));
+  QCOMPARE(forward.value(newName).toString(), QStringLiteral("SOURCE"));
+  QCOMPARE(forward.value(newOption).toString(), QStringLiteral("keep"));
+  QVERIFY(Settings::trySetValues(previous));
+  const auto rollbackPath = files.filePath(QStringLiteral("rollback.conf"));
+  QVERIFY(QFile::copy(Settings::settingsFile(), rollbackPath));
+  const QSettings rollback(rollbackPath, QSettings::IniFormat);
+  QVERIFY(!rollback.allKeys().contains(newName, Qt::CaseSensitive));
+  QVERIFY(!rollback.allKeys().contains(newOption, Qt::CaseSensitive));
+  QCOMPARE(rollback.value(oldName).toString(), QStringLiteral("source"));
+  QCOMPARE(rollback.value(oldOption).toString(), QStringLiteral("keep"));
+
+  QSettings injected(files.filePath(QStringLiteral("algorithm.conf")), QSettings::IniFormat);
+  applyIniChanges(injected, {{oldName, QStringLiteral("source")}, {oldOption, QStringLiteral("keep")}},
+                  Qt::CaseInsensitive);
+  applyIniChanges(injected, changes, Qt::CaseInsensitive);
+  injected.sync();
+  QCOMPARE(injected.value(newOption).toString(), QStringLiteral("keep"));
+  QVERIFY(!injected.allKeys().contains(oldOption, Qt::CaseSensitive));
 }
 
 QTEST_MAIN(SettingsTests)

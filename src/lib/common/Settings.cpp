@@ -5,6 +5,7 @@
  */
 
 #include "Settings.h"
+#include "SettingsIniTransaction.h"
 
 #include "LogLevel.h"
 #include "NetworkProtocol.h"
@@ -625,21 +626,28 @@ bool Settings::trySetValues(const QVariantMap &values, QString *error)
 
   QVariantMap previous;
   QVariantMap requested;
-  QStringList absentKeys;
   QStringList changedKeys;
+  const auto stored = deskflow::settings_detail::snapshotStoredValues(transaction, values.keys());
+  const auto caseChangeKeys = deskflow::settings_detail::caseChangeWrites(values);
+  const auto identity = values.constFind(Core::ComputerName);
+  const bool changingIdentity = identity != values.cend() && identity.value().isValid() &&
+                                cleanComputerName(identity.value().toString()) !=
+                                    transaction.value(Core::ComputerName, defaultValue(Core::ComputerName)).toString();
   for (auto it = values.cbegin(); it != values.cend(); ++it) {
     auto candidate = it.value();
     if (it.key() == Core::ComputerName && candidate.isValid())
       candidate = cleanComputerName(candidate.toString());
     const auto effective = candidate.isValid() ? candidate : defaultValue(it.key());
     const bool effectiveChanged = transaction.value(it.key(), defaultValue(it.key())) != effective;
-    // Invalid QVariant means restore absence, including an explicit default whose
-    // removal changes storage but does not change the effective preference.
-    if (!effectiveChanged && (candidate.isValid() || !transaction.contains(it.key())))
+    const bool existed = transaction.contains(it.key());
+    // Identity rollback must restore explicitly stored device defaults too.
+    // Other callers retain the existing implicit-default filtering behavior.
+    const bool restoreComputerValue = changingIdentity && candidate.isValid() && !existed &&
+                                      it.key().startsWith(QStringLiteral("computer_"));
+    if (!effectiveChanged && !caseChangeKeys.contains(it.key()) &&
+        !restoreComputerValue && (candidate.isValid() || !existed))
       continue;
-    previous.insert(it.key(), transaction.value(it.key()));
-    if (!transaction.contains(it.key()))
-      absentKeys.append(it.key());
+    previous.insert(it.key(), stored.value(it.key()));
     requested.insert(it.key(), candidate);
     if (effectiveChanged)
       changedKeys.append(it.key());
@@ -647,23 +655,13 @@ bool Settings::trySetValues(const QVariantMap &values, QString *error)
   if (requested.isEmpty())
     return true;
 
-  for (auto it = requested.cbegin(); it != requested.cend(); ++it) {
-    if (it.value().isValid())
-      transaction.setValue(it.key(), it.value());
-    else
-      transaction.remove(it.key());
-  }
+  deskflow::settings_detail::applyIniChanges(transaction, requested);
   // All requested keys reach the INI file through one atomic replacement.
   transaction.sync();
   if (transaction.status() != QSettings::NoError) {
     // QSettings instances for the same file share their in-memory cache. Restore
     // it as well as the pending write, including keys which did not exist before.
-    for (auto it = previous.cbegin(); it != previous.cend(); ++it) {
-      if (absentKeys.contains(it.key()))
-        transaction.remove(it.key());
-      else
-        transaction.setValue(it.key(), it.value());
-    }
+    deskflow::settings_detail::applyIniChanges(transaction, previous);
     transaction.sync();
     if (error)
       *error = QStringLiteral("无法保存配置，已保留全部原配置。");

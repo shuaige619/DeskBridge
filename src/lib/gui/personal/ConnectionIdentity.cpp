@@ -30,28 +30,32 @@ QVariantMap expandedConnectionIdentityChanges(const QVariantMap &changes)
     return changes;
 
   QVariantMap expanded = changes;
+  // A separate read-only view avoids changing the shared proxy's group/array
+  // cursor when this helper is used alongside the configuration editors.
+  QSettings saved(Settings::settingsFile(), QSettings::IniFormat);
   const QString oldPrefix = QStringLiteral("computer_%1/").arg(oldName);
   const QString newPrefix = QStringLiteral("computer_%1/").arg(newName);
+#ifdef Q_OS_WIN
+  constexpr auto settingsCaseSensitivity = Qt::CaseInsensitive;
+#else
   constexpr auto settingsCaseSensitivity = Qt::CaseSensitive;
-  const bool sameGroup = oldPrefix.compare(newPrefix, settingsCaseSensitivity) == 0;
+#endif
   const QRegularExpression screenName(QStringLiteral("^internalConfig/screens/[0-9]+/name$"));
   const QRegularExpression actionTarget(QStringLiteral(
       "^internalConfig/hotkeys/[0-9]+/actions/[0-9]+/"
       "(?:switchScreenName|typeScreenNames/[0-9]+/typeScreenName)$"
   ));
-  // A separate read-only view avoids changing the shared proxy's group/array
-  // cursor when this helper is used alongside the configuration editors.
-  QSettings saved(Settings::settingsFile(), QSettings::IniFormat);
   for (const QString &key : saved.allKeys()) {
     const QVariant value = saved.value(key);
-    if (key.startsWith(oldPrefix, settingsCaseSensitivity) && !sameGroup) {
+    if (key.startsWith(oldPrefix, settingsCaseSensitivity)) {
       const QString target = newPrefix + key.mid(oldPrefix.size());
       if (!expanded.contains(target))
         expanded.insert(target, value);
       // The core discovers devices from every computer_* group, independently
       // of the GUI layout. Move the old identity rather than leaving a second
       // device behind; the caller snapshots these removals for rollback too.
-      expanded.insert(key, QVariant());
+      if (target != key)
+        expanded.insert(key, QVariant());
     } else if ((screenName.match(key).hasMatch() || actionTarget.match(key).hasMatch()) &&
                changes.value(key, value).toString() == oldName) {
       expanded.insert(key, newName);
