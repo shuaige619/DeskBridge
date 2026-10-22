@@ -21,6 +21,7 @@ public:
 
   void sendStop();
   void sendLogLevel(const QString &level);
+  void requestDeviceContext();
   void sendLayoutCommand(const QString &command, const QString &args = {});
 
 Q_SIGNALS:

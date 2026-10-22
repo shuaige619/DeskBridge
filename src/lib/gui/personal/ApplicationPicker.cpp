@@ -3,13 +3,14 @@
  * SPDX-License-Identifier: GPL-2.0-only WITH LicenseRef-OpenSSL-Exception
  */
 #include "ApplicationPicker.h"
+#include "DialogStyle.h"
 #include "PersonalStyle.h"
 
 #include <QDialogButtonBox>
 #include <QDir>
+#include <QFileDialog>
 #include <QFileIconProvider>
 #include <QFileInfo>
-#include <QFileDialog>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -40,18 +41,23 @@ QMap<QString, ApplicationInfo> installedApplications()
         if (id.isEmpty() || result.contains(id))
           continue;
         auto name = metadata.value(QStringLiteral("CFBundleDisplayName")).toString();
-        if (name.isEmpty()) name = metadata.value(QStringLiteral("CFBundleName")).toString();
-        if (name.isEmpty()) name = folder.completeBaseName();
-        if (id == QStringLiteral("com.openai.codex")) name = QStringLiteral("Codex");
-        if (id == QStringLiteral("com.electron.lark")) name = QStringLiteral("飞书");
+        if (name.isEmpty())
+          name = metadata.value(QStringLiteral("CFBundleName")).toString();
+        if (name.isEmpty())
+          name = folder.completeBaseName();
+        if (id == QStringLiteral("com.openai.codex"))
+          name = QStringLiteral("Codex");
+        if (id == QStringLiteral("com.electron.lark"))
+          name = QStringLiteral("飞书");
         result.insert(id, {id, name, icons.icon(folder)});
       } else if (depth > 0 && !folder.isSymLink()) {
         self(self, folder.filePath(), depth - 1);
       }
     }
   };
-  for (const auto &path : {QStringLiteral("/Applications"), QStringLiteral("/System/Applications"),
-                           QDir::homePath() + QStringLiteral("/Applications")}) {
+  for (const auto &path :
+       {QStringLiteral("/Applications"), QStringLiteral("/System/Applications"),
+        QDir::homePath() + QStringLiteral("/Applications")}) {
     visit(visit, path, 2);
   }
 #elif defined(Q_OS_WIN)
@@ -60,7 +66,8 @@ QMap<QString, ApplicationInfo> installedApplications()
       qEnvironmentVariable("LOCALAPPDATA") + QStringLiteral("/Programs/Microsoft VS Code/Code.exe"),
       qEnvironmentVariable("ProgramFiles") + QStringLiteral("/Microsoft VS Code/Code.exe"),
       qEnvironmentVariable("LOCALAPPDATA") + QStringLiteral("/Feishu/Feishu.exe"),
-      qEnvironmentVariable("LOCALAPPDATA") + QStringLiteral("/Programs/Codex/Codex.exe")};
+      qEnvironmentVariable("LOCALAPPDATA") + QStringLiteral("/Programs/Codex/Codex.exe")
+  };
   for (const auto &path : candidates) {
     const QFileInfo file(path);
     if (file.isFile()) {
@@ -75,11 +82,14 @@ QMap<QString, ApplicationInfo> installedApplications()
       QSettings desktop(entry.absoluteFilePath(), QSettings::IniFormat);
       desktop.beginGroup(QStringLiteral("Desktop Entry"));
       if (desktop.value(QStringLiteral("Hidden"), false).toBool() ||
-          desktop.value(QStringLiteral("NoDisplay"), false).toBool()) continue;
+          desktop.value(QStringLiteral("NoDisplay"), false).toBool())
+        continue;
       const auto command = QProcess::splitCommand(desktop.value(QStringLiteral("Exec")).toString());
-      if (command.isEmpty() || QFileInfo(command.first()).fileName() == QStringLiteral("env")) continue;
+      if (command.isEmpty() || QFileInfo(command.first()).fileName() == QStringLiteral("env"))
+        continue;
       const auto path = QStandardPaths::findExecutable(command.first());
-      if (path.isEmpty()) continue;
+      if (path.isEmpty())
+        continue;
       const auto id = ApplicationPicker::executableIdentifier(path);
       const auto name = desktop.value(QStringLiteral("Name"), QFileInfo(path).completeBaseName()).toString();
       result.insert(id, {id, name, QIcon::fromTheme(desktop.value(QStringLiteral("Icon")).toString())});
@@ -99,7 +109,8 @@ QList<ApplicationInfo> catalogForSelection(const QStringList &selected)
 {
   auto choices = applications();
   for (const auto &id : selected)
-    if (!choices.contains(id)) choices.insert(id, ApplicationPicker::application(id));
+    if (!choices.contains(id))
+      choices.insert(id, ApplicationPicker::application(id));
   return choices.values();
 }
 } // namespace
@@ -139,8 +150,11 @@ ApplicationPicker::ApplicationPicker(const QStringList &selected, QWidget *paren
 {
 }
 
-ApplicationPicker::ApplicationPicker(const QStringList &selected, const QList<ApplicationInfo> &catalog, QWidget *parent)
-    : QDialog(parent), m_selected(selected)
+ApplicationPicker::ApplicationPicker(
+    const QStringList &selected, const QList<ApplicationInfo> &catalog, QWidget *parent
+)
+    : QDialog(parent),
+      m_selected(selected)
 {
   setObjectName(QStringLiteral("applicationPicker"));
   setWindowTitle(tr("选择生效应用"));
@@ -150,7 +164,8 @@ ApplicationPicker::ApplicationPicker(const QStringList &selected, const QList<Ap
   auto *layout = new QVBoxLayout(this);
   layout->setContentsMargins(24, 24, 24, 20);
   layout->setSpacing(12);
-  auto *description = new QLabel(tr("点按应用行即可选择，可多选；再次点按可取消本次选择。已添加的应用可返回映射页移除。"), this);
+  auto *description =
+      new QLabel(tr("点按应用行即可选择，可多选；再次点按可取消本次选择。已添加的应用可返回映射页移除。"), this);
   description->setWordWrap(true);
   description->setProperty("secondaryText", true);
   layout->addWidget(description);
@@ -171,9 +186,11 @@ ApplicationPicker::ApplicationPicker(const QStringList &selected, const QList<Ap
 #else
     const auto path = QFileDialog::getOpenFileName(this, tr("选择应用程序"), {}, tr("所有文件 (*)"));
 #endif
-    if (path.isEmpty()) return;
+    if (path.isEmpty())
+      return;
     const QFileInfo file(path);
-    if (!file.isFile()
+    if (
+        !file.isFile()
 #ifdef Q_OS_WIN
         || file.suffix().compare(QStringLiteral("exe"), Qt::CaseInsensitive) != 0
 #else
@@ -186,7 +203,8 @@ ApplicationPicker::ApplicationPicker(const QStringList &selected, const QList<Ap
     const auto id = executableIdentifier(path);
     for (int i = 0; i < m_list->count(); ++i) {
       if (m_list->item(i)->data(Qt::UserRole).toString() == id) {
-        if (!m_selected.contains(id)) m_list->item(i)->setSelected(true);
+        if (!m_selected.contains(id))
+          m_list->item(i)->setSelected(true);
         search->clear();
         m_list->scrollToItem(m_list->item(i));
         return;
@@ -201,7 +219,8 @@ ApplicationPicker::ApplicationPicker(const QStringList &selected, const QList<Ap
     m_list->sortItems();
     search->clear();
     m_list->scrollToItem(item);
-    if (auto *empty = findChild<QLabel *>(QStringLiteral("applicationEmptyNotice"))) empty->hide();
+    if (auto *empty = findChild<QLabel *>(QStringLiteral("applicationEmptyNotice")))
+      empty->hide();
   });
 #endif
   m_list = new QListWidget(this);
@@ -212,9 +231,11 @@ ApplicationPicker::ApplicationPicker(const QStringList &selected, const QList<Ap
   m_list->setSpacing(3);
   QMap<QString, ApplicationInfo> choices;
   for (const auto &app : catalog)
-    if (!app.id.isEmpty()) choices.insert(app.id, app);
+    if (!app.id.isEmpty())
+      choices.insert(app.id, app);
   for (const auto &id : selected)
-    if (!choices.contains(id)) choices.insert(id, {id, tr("未找到或属于其他系统的应用"), {}});
+    if (!choices.contains(id))
+      choices.insert(id, {id, tr("未找到或属于其他系统的应用"), {}});
   for (const auto &app : choices) {
     const bool existing = selected.contains(app.id);
     auto *item = new QListWidgetItem(app.icon, existing ? tr("%1 · 已添加").arg(app.name) : app.name, m_list);
@@ -230,9 +251,11 @@ ApplicationPicker::ApplicationPicker(const QStringList &selected, const QList<Ap
   layout->addWidget(m_list, 1);
   auto *empty = new QLabel(
 #ifdef Q_OS_MACOS
-      tr("没有找到应用。应用安装到“应用程序”文件夹后，重新打开桌桥即可显示。"), this);
+      tr("没有找到应用。应用安装到“应用程序”文件夹后，重新打开桌桥即可显示。"), this
+  );
 #else
-      tr("没有找到应用。可以直接选择要使用的应用程序文件。"), this);
+      tr("没有找到应用。可以直接选择要使用的应用程序文件。"), this
+  );
 #endif
   empty->setObjectName(QStringLiteral("applicationEmptyNotice"));
   empty->setWordWrap(true);
@@ -262,7 +285,7 @@ ApplicationPicker::ApplicationPicker(const QStringList &selected, const QList<Ap
     empty->setVisible(!visible);
   });
   updateSelection();
-  applyPersonalStyle(this);
+  prepareDialog(this, width(), height());
   search->setFocus();
 }
 
@@ -284,8 +307,10 @@ void ApplicationPicker::updateSelection()
   const auto added = selectedApplications().size() - m_selected.size();
   m_confirm->setEnabled(added > 0);
   m_confirm->setText(added > 0 ? tr("添加 %1 个应用").arg(added) : tr("选择要添加的应用"));
-  m_selectionSummary->setText(m_selected.isEmpty() ? tr("本次已选择 %1 个应用").arg(added)
-      : tr("已添加 %1 个应用 · 本次选择 %2 个").arg(m_selected.size()).arg(added));
+  m_selectionSummary->setText(
+      m_selected.isEmpty() ? tr("本次已选择 %1 个应用").arg(added)
+                           : tr("已添加 %1 个应用 · 本次选择 %2 个").arg(m_selected.size()).arg(added)
+  );
 }
 
 } // namespace deskflow::gui::personal

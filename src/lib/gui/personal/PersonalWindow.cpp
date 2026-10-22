@@ -8,8 +8,8 @@
 #include "ToggleSwitch.h"
 #include "common/Settings.h"
 
-#include <QCheckBox>
 #include <QAction>
+#include <QCheckBox>
 #include <QDoubleSpinBox>
 #include <QEvent>
 #include <QFrame>
@@ -30,7 +30,8 @@ QLabel *label(const QString &text, QWidget *parent, const char *role = nullptr)
   auto *item = new QLabel(text, parent);
   item->setTextFormat(Qt::PlainText);
   item->setWordWrap(true);
-  if (role) item->setProperty(role, true);
+  if (role)
+    item->setProperty(role, true);
   return item;
 }
 
@@ -52,7 +53,8 @@ QWidget *scrollPage(QWidget *body, QWidget *parent)
 } // namespace
 
 PersonalWindow::PersonalWindow(QWidget *parent, LoginStartup *service)
-    : QWidget(parent), m_loginStartup(service ? service : new LoginStartup(this))
+    : QWidget(parent),
+      m_loginStartup(service ? service : new LoginStartup(this))
 {
   setObjectName(QStringLiteral("personalWindow"));
   auto *root = new QHBoxLayout(this);
@@ -72,7 +74,10 @@ PersonalWindow::PersonalWindow(QWidget *parent, LoginStartup *service)
   auto *brandText = new QVBoxLayout;
   brandText->setSpacing(1);
   auto *name = label(tr("桌桥"), sidebar);
-  QFont brandFont = name->font(); brandFont.setPointSize(17); brandFont.setWeight(QFont::DemiBold); name->setFont(brandFont);
+  QFont brandFont = name->font();
+  brandFont.setPointSize(17);
+  brandFont.setWeight(QFont::DemiBold);
+  name->setFont(brandFont);
   brandText->addWidget(name);
   brandText->addWidget(label(QStringLiteral("DeskBridge"), sidebar, "secondaryText"));
   brand->addLayout(brandText);
@@ -95,7 +100,8 @@ PersonalWindow::PersonalWindow(QWidget *parent, LoginStartup *service)
     button->setProperty("personalNav", true);
     button->setIconSize(QSize(22, 22));
     connect(button, &QPushButton::toggled, this, [this, i](bool checked) {
-      if (checked) showPage(static_cast<Page>(i));
+      if (checked)
+        showPage(static_cast<Page>(i));
     });
     m_navigation.append(button);
     side->addWidget(button);
@@ -126,13 +132,17 @@ PersonalWindow::PersonalWindow(QWidget *parent, LoginStartup *service)
   headingLayout->addWidget(m_title);
   headingLayout->addWidget(m_subtitle);
   m_toolbar->addWidget(heading);
-  auto *spacer = new QWidget(m_toolbar); spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+  auto *spacer = new QWidget(m_toolbar);
+  spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
   m_toolbar->addWidget(spacer);
   m_primaryButton = new QPushButton(tr("连接"), m_toolbar);
   m_primaryButton->setObjectName(QStringLiteral("personalPrimaryConnection"));
   m_primaryButton->setMinimumWidth(92);
   connect(m_primaryButton, &QPushButton::clicked, this, [this] {
-    if (m_running) Q_EMIT disconnectRequested(); else Q_EMIT connectRequested();
+    if (m_running)
+      Q_EMIT disconnectRequested();
+    else
+      Q_EMIT connectRequested();
   });
   m_connectionAction = m_toolbar->addWidget(m_primaryButton);
   contentLayout->addWidget(m_toolbar);
@@ -145,7 +155,8 @@ PersonalWindow::PersonalWindow(QWidget *parent, LoginStartup *service)
   m_pages->addWidget(m_shortcuts);
   m_pages->addWidget(makeGeneralPage());
   m_advanced = new AdvancedPage(m_pages);
-  if (auto *heading = m_advanced->findChild<QWidget *>(QStringLiteral("advancedPageHeading"))) heading->hide();
+  if (auto *heading = m_advanced->findChild<QWidget *>(QStringLiteral("advancedPageHeading")))
+    heading->hide();
   if (auto *body = m_advanced->findChild<QVBoxLayout *>(QStringLiteral("advancedBodyLayout")))
     body->setContentsMargins(28, 22, 28, 22);
   m_pages->addWidget(m_advanced);
@@ -183,7 +194,9 @@ QWidget *PersonalWindow::makeConnectionPage()
   m_status = label(tr("未连接"), body, "sectionTitle");
   m_status->setObjectName(QStringLiteral("personalConnectionStatus"));
   m_status->setWordWrap(false);
-  QFont stateFont = m_status->font(); stateFont.setPointSize(16); m_status->setFont(stateFont);
+  QFont stateFont = m_status->font();
+  stateFont.setPointSize(16);
+  m_status->setFont(stateFont);
   stateRow->addWidget(m_status);
   stateRow->addSpacing(20);
   m_security = label(tr("TLS 已开启"), body, "secondaryText");
@@ -208,38 +221,26 @@ QWidget *PersonalWindow::makeConnectionPage()
   layoutNote->setObjectName(QStringLiteral("personalLayoutNote"));
   layoutNote->setAlignment(Qt::AlignCenter);
   layout->addWidget(layoutNote);
+  m_manageDevices = new QPushButton(tr("管理设备与控制…"), body);
+  m_manageDevices->setObjectName(QStringLiteral("manageDevicesButton"));
+  m_manageDevices->setToolTip(tr("查看设备与控制选项；来源端专属设置会标明设置位置"));
+  connect(m_manageDevices, &QPushButton::clicked, this, &PersonalWindow::deviceManagementRequested);
+  layout->addWidget(m_manageDevices, 0, Qt::AlignHCenter);
   refreshScreenLayout();
   layout->addSpacing(10);
-  m_mappingRow = new QPushButton(body);
-  m_mappingRow->setAccessibleName(tr("快捷键映射"));
-  m_mappingRow->setProperty("personalRow", true);
-  m_mappingRow->setMinimumHeight(76);
-  auto *mappingLayout = new QHBoxLayout(m_mappingRow);
-  mappingLayout->setContentsMargins(18, 14, 18, 14);
-  auto *mappingText = new QVBoxLayout;
-  mappingText->setSpacing(4);
-  mappingText->addWidget(label(tr("快捷键映射"), m_mappingRow, "sectionTitle"));
-  m_mappingDetail = label(tr("复制、粘贴沿用 Ctrl 的使用习惯"), m_mappingRow, "secondaryText");
-  m_mappingDetail->setObjectName(QStringLiteral("personalMappingDetail"));
-  mappingText->addWidget(m_mappingDetail);
-  mappingLayout->addLayout(mappingText, 1);
-  m_mappingBadge = label(tr("已开启"), m_mappingRow, "statusBadge");
-  mappingLayout->addWidget(m_mappingBadge);
-  mappingLayout->addSpacing(12);
-  mappingLayout->addWidget(label(QStringLiteral("›"), m_mappingRow, "secondaryText"));
-  connect(m_mappingRow, &QPushButton::clicked, this, [this] { showPage(Shortcuts); });
-  layout->addWidget(m_mappingRow);
   auto *options = new QPushButton(body);
   m_connectionOptions = options;
-  options->setAccessibleName(tr("连接选项"));
+  options->setObjectName(QStringLiteral("connectionSettingsButton"));
+  options->setAccessibleName(tr("连接设置"));
   options->setProperty("personalRow", true);
   options->setMinimumHeight(76);
   auto *optionsLayout = new QHBoxLayout(options);
   optionsLayout->setContentsMargins(18, 14, 18, 14);
   auto *optionsText = new QVBoxLayout;
   optionsText->setSpacing(4);
-  optionsText->addWidget(label(tr("连接选项"), options, "sectionTitle"));
-  optionsText->addWidget(label(tr("地址、本机角色与自动重连"), options, "secondaryText"));
+  optionsText->addWidget(label(tr("连接设置"), options, "sectionTitle"));
+  m_connectionDetails = label(tr("设备名称、本机角色与来源地址"), options, "secondaryText");
+  optionsText->addWidget(m_connectionDetails);
   optionsLayout->addLayout(optionsText, 1);
   optionsLayout->addWidget(label(QStringLiteral("›"), options, "secondaryText"));
   connect(options, &QPushButton::clicked, this, &PersonalWindow::connectionOptionsRequested);
@@ -288,7 +289,8 @@ QWidget *PersonalWindow::makeGeneralPage()
   });
   connect(m_loginStartupSettings, &QPushButton::clicked, this, [this] {
     const auto status = m_loginStartup->status();
-    if (!m_configurationBusy && !m_loginStartup->isApplying() && status.supported && status.approvalRequired && status.error.isEmpty())
+    if (!m_configurationBusy && !m_loginStartup->isApplying() && status.supported && status.approvalRequired &&
+        status.error.isEmpty())
       m_loginStartup->openSystemSettings();
   });
   auto *startupSeparator = new QFrame(startup);
@@ -301,15 +303,35 @@ QWidget *PersonalWindow::makeGeneralPage()
   m_autoHide->setObjectName(QStringLiteral("hideMainWindowSwitch"));
   m_closeToTray = new ToggleSwitch(
 #ifdef Q_OS_MACOS
-      tr("关闭窗口后继续在菜单栏运行"), startup);
+      tr("关闭窗口后继续在菜单栏运行"), startup
+  );
 #else
-      tr("关闭窗口后继续在系统托盘中运行"), startup);
+      tr("关闭窗口后继续在系统托盘中运行"), startup
+  );
 #endif
   for (auto *item : {m_autoConnect, m_autoHide, m_closeToTray}) {
     startupLayout->addWidget(item);
     connect(item, &QCheckBox::toggled, this, &PersonalWindow::markPreferencesDirty);
   }
   layout->addWidget(startup);
+  auto *appearance = card(body);
+  auto *appearanceLayout = new QVBoxLayout(appearance);
+  appearanceLayout->setContentsMargins(18, 16, 18, 16);
+  appearanceLayout->setSpacing(12);
+  appearanceLayout->addWidget(label(tr("外观"), appearance, "sectionTitle"));
+  appearanceLayout->addWidget(label(tr("界面随系统切换浅色与深色外观。"), appearance, "secondaryText"));
+  m_showVersion = new ToggleSwitch(tr("在窗口标题中显示版本"), appearance);
+  m_showVersion->setObjectName(QStringLiteral("showVersionInTitleSwitch"));
+  appearanceLayout->addWidget(m_showVersion);
+  m_symbolicTray = new ToggleSwitch(tr("使用单色托盘图标"), appearance);
+  m_symbolicTray->setObjectName(QStringLiteral("symbolicTrayIconSwitch"));
+  appearanceLayout->addWidget(m_symbolicTray);
+#ifndef Q_OS_LINUX
+  m_symbolicTray->hide();
+#endif
+  connect(m_showVersion, &QCheckBox::toggled, this, &PersonalWindow::markPreferencesDirty);
+  connect(m_symbolicTray, &QCheckBox::toggled, this, &PersonalWindow::markPreferencesDirty);
+  layout->addWidget(appearance);
   auto *sharing = card(body);
   auto *sharingLayout = new QVBoxLayout(sharing);
   sharingLayout->setContentsMargins(18, 16, 18, 16);
@@ -318,7 +340,9 @@ QWidget *PersonalWindow::makeGeneralPage()
   m_preventSleep = new ToggleSwitch(tr("共享期间防止本机休眠"), sharing);
   m_preventSleep->setObjectName(QStringLiteral("preventSleepSwitch"));
   sharingLayout->addWidget(m_preventSleep);
-  sharingLayout->addWidget(label(tr("仅在共享核心运行期间保持本机唤醒。更改后需要重新连接。"), sharing, "secondaryText"));
+  sharingLayout->addWidget(
+      label(tr("仅在共享核心运行期间保持本机唤醒。更改后需要重新连接。"), sharing, "secondaryText")
+  );
   connect(m_preventSleep, &QCheckBox::toggled, this, &PersonalWindow::markPreferencesDirty);
   layout->addWidget(sharing);
   auto *scrolling = card(body);
@@ -400,22 +424,28 @@ void PersonalWindow::showPage(Page page)
   const QStringList titles{tr("设备连接"), tr("快捷键映射"), tr("通用"), tr("高级")};
   const QStringList subtitles{
       m_serverMode ? tr("本机（%1）· 键鼠来源").arg(displayOperatingSystem(shortcuts::localOS()))
-                   : (m_sourceOS == shortcuts::DeviceOS::Unknown ? tr("来源待识别 → 本机（%1）").arg(displayOperatingSystem(shortcuts::localOS()))
-                       : tr("%1 → 本机（%2）").arg(displayOperatingSystem(m_sourceOS), displayOperatingSystem(shortcuts::localOS()))),
-      tr("远程键盘 → 本机（%1）").arg(displayOperatingSystem(shortcuts::localOS())),
-      tr("让桌桥适合你的使用习惯"), tr("连接安全、日志与维护")};
+                   : (m_sourceOS == shortcuts::DeviceOS::Unknown
+                          ? tr("来源待识别 → 本机（%1）").arg(displayOperatingSystem(shortcuts::localOS()))
+                          : tr("%1 → 本机（%2）")
+                                .arg(displayOperatingSystem(m_sourceOS), displayOperatingSystem(shortcuts::localOS()))),
+      tr("远程键盘 → 本机（%1）").arg(displayOperatingSystem(shortcuts::localOS())), tr("让桌桥适合你的使用习惯"),
+      tr("连接安全、日志与维护")
+  };
   m_title->setText(titles[page]);
   m_subtitle->setText(subtitles[page]);
   m_primaryButton->setVisible(page == Connection);
   m_connectionAction->setVisible(page == Connection);
-  if (page == General) refreshLoginStartup();
-  if (page == Advanced) m_advanced->refreshFromSettings();
+  if (page == General)
+    refreshLoginStartup();
+  if (page == Advanced)
+    m_advanced->refreshFromSettings();
   refreshAppearance();
 }
 
-void PersonalWindow::setConnectionStatus(deskflow::core::ConnectionState connection,
-                                       deskflow::core::ProcessState process, bool tlsEnabled,
-                                       bool secure, bool canConnect, const QString &host, const QString &macName)
+void PersonalWindow::setConnectionStatus(
+    deskflow::core::ConnectionState connection, deskflow::core::ProcessState process, bool tlsEnabled, bool secure,
+    bool canConnect, const QString &host, const QString &macName
+)
 {
   using deskflow::core::ConnectionState;
   using deskflow::core::ProcessState;
@@ -423,30 +453,48 @@ void PersonalWindow::setConnectionStatus(deskflow::core::ConnectionState connect
   m_running = process != ProcessState::Stopped;
   QString status = tr("未连接");
   const auto peer = displayOperatingSystem(m_sourceOS);
-  if (m_serverMode && connection == ConnectionState::Listening) status = tr("正在共享键鼠，等待客户端");
-  else if (connected) status = m_serverMode ? tr("客户端已连接") : tr("已连接 %1 来源电脑").arg(peer);
-  else if (process == ProcessState::Stopping) status = tr("正在断开连接…");
-  else if (process == ProcessState::RetryPending) status = tr("正在重试连接…");
-  else if (m_running) status = m_serverMode ? tr("正在启动共享…") : tr("正在连接来源电脑…");
+  if (m_serverMode && connection == ConnectionState::Listening)
+    status = tr("正在共享键鼠，等待客户端");
+  else if (connected)
+    status = m_serverMode ? tr("客户端已连接") : tr("已连接 %1 来源电脑").arg(peer);
+  else if (process == ProcessState::Stopping)
+    status = tr("正在断开连接…");
+  else if (process == ProcessState::RetryPending)
+    status = tr("正在重试连接…");
+  else if (m_running)
+    status = m_serverMode ? tr("正在启动共享…") : tr("正在连接来源电脑…");
   m_status->setText((connected ? QStringLiteral("●  ") : QStringLiteral("○  ")) + status);
   m_sidebarStatus->setText(m_status->text());
   m_status->setStyleSheet(connected ? QStringLiteral("color: #249b3c;") : QString());
   m_sidebarStatus->setStyleSheet(m_status->styleSheet());
   m_security->setText(connected && secure ? tr("已加密连接") : (tlsEnabled ? tr("TLS 已开启") : tr("未启用加密")));
-  m_primaryButton->setText(m_serverMode ? (m_running ? tr("停止共享") : tr("开始共享"))
-                                      : (m_running ? tr("断开连接") : tr("连接")));
+  m_primaryButton->setText(
+      m_serverMode ? (m_running ? tr("停止共享") : tr("开始共享")) : (m_running ? tr("断开连接") : tr("连接"))
+  );
   m_connectionCanInteract = process != ProcessState::Stopping && (m_running || canConnect);
-  m_primaryButton->setEnabled(m_connectionCanInteract &&
-                              (!m_configurationBusy || (m_allowDisconnectWhileBusy && m_running)));
-  m_primaryButton->setToolTip(!m_running && !canConnect ? tr("请先在连接选项中设置来源电脑地址与角色") : QString());
+  m_primaryButton->setEnabled(
+      m_connectionCanInteract && (!m_configurationBusy || (m_allowDisconnectWhileBusy && m_running))
+  );
+  m_primaryButton->setToolTip(
+      !m_running && !canConnect ? tr("请先在连接设置中填写来源电脑地址并选择本机角色") : QString()
+  );
   m_devices->setConnection(connected, host, macName);
+  m_connectionDetails->setText(
+      m_serverMode ? tr("%1 · 共享本机键鼠").arg(macName)
+                   : tr("%1 · 接收自 %2").arg(macName, host.isEmpty() ? tr("尚未设置来源地址") : host)
+  );
 }
 
 void PersonalWindow::setDeviceContext(shortcuts::DeviceOS sourceOS, bool server)
 {
-  if (m_sourceOS == sourceOS && m_serverMode == server) return;
+  if (m_sourceOS == sourceOS && m_serverMode == server)
+    return;
   m_sourceOS = sourceOS;
   m_serverMode = server;
+  m_manageDevices->setToolTip(
+      server ? tr("添加或移除设备，设置控制热键、剪贴板共享与切屏行为")
+             : tr("查看设备与控制选项；来源端专属设置会标明设置位置")
+  );
   m_devices->setDeviceContext(sourceOS, server);
   m_shortcuts->setClientMode(!server);
   refreshScreenLayout();
@@ -468,70 +516,99 @@ void PersonalWindow::refreshScreenLayout()
   QString exitEdge;
   QString returnEdge;
   switch (m_screenLayout.direction) {
-  case Direction::Left: exitEdge = tr("左"); returnEdge = tr("右"); break;
-  case Direction::Right: exitEdge = tr("右"); returnEdge = tr("左"); break;
-  case Direction::Above: exitEdge = tr("上"); returnEdge = tr("下"); break;
-  case Direction::Below: exitEdge = tr("下"); returnEdge = tr("上"); break;
-  default: break;
+  case Direction::Left:
+    exitEdge = tr("左");
+    returnEdge = tr("右");
+    break;
+  case Direction::Right:
+    exitEdge = tr("右");
+    returnEdge = tr("左");
+    break;
+  case Direction::Above:
+    exitEdge = tr("上");
+    returnEdge = tr("下");
+    break;
+  case Direction::Below:
+    exitEdge = tr("下");
+    returnEdge = tr("上");
+    break;
+  default:
+    break;
   }
-  m_connectionHint->setText(!m_screenLayout.screens.isEmpty()
-      ? tr("鼠标从相邻屏幕的对应边缘切换 · 点亮的圆点表示设备在线")
-      : exitEdge.isEmpty()
-      ? tr("读取实际布局后，将显示鼠标切换的屏幕边缘")
-      : tr("从键鼠来源的%1边缘进入接收电脑，从接收电脑的%2边缘返回").arg(exitEdge, returnEdge));
+  m_connectionHint->setText(
+      !m_screenLayout.screens.isEmpty() ? tr("鼠标从相邻屏幕的对应边缘切换 · 点亮的圆点表示设备在线")
+      : exitEdge.isEmpty()              ? tr("读取实际布局后，将显示鼠标切换的屏幕边缘")
+                           : tr("从键鼠来源的%1边缘进入接收电脑，从接收电脑的%2边缘返回").arg(exitEdge, returnEdge)
+  );
   QString note;
-  if (m_layoutPending) note = m_layoutFeedback.isEmpty() ? tr("正在同步屏幕布局…确认后更新示意图") : m_layoutFeedback;
-  else if (m_configurationBusy) note = tr("正在应用设置，暂时无法调整布局");
-  else if (!m_layoutFeedback.isEmpty()) note = m_layoutFeedback;
-  else if (!m_screenLayout.error.isEmpty()) note = m_screenLayout.error;
+  if (m_layoutPending)
+    note = m_layoutFeedback.isEmpty() ? tr("正在同步屏幕布局…确认后更新示意图") : m_layoutFeedback;
+  else if (m_configurationBusy)
+    note = tr("正在应用设置，暂时无法调整布局");
+  else if (!m_layoutFeedback.isEmpty())
+    note = m_layoutFeedback;
+  else if (!m_screenLayout.error.isEmpty())
+    note = m_screenLayout.error;
   else if (!m_screenLayout.screens.isEmpty() && m_screenLayout.editable)
     note = tr("拖动电脑到空白格；所有电脑需保持相邻连通 · 方向键移动选中设备");
   else if (m_screenLayout.editable && layout::isCardinal(m_screenLayout.direction))
     note = tr("拖动任一电脑到上、下、左、右位置 · 也可聚焦后使用方向键");
-  else note = (!m_screenLayout.screens.isEmpty() || layout::isCardinal(m_screenLayout.direction)) ? tr("当前屏幕布局只读，暂时无法在此调整")
-                                                        : tr("正在等待来源电脑提供实际屏幕布局");
+  else
+    note = (!m_screenLayout.screens.isEmpty() || layout::isCardinal(m_screenLayout.direction))
+               ? tr("当前屏幕布局只读，暂时无法在此调整")
+               : tr("正在等待来源电脑提供实际屏幕布局");
   m_layoutNote->setText(note);
 }
 
 void PersonalWindow::setMappingStatus(bool enabled, int enabledRules, const QString &fullShortcutStatus)
 {
-  m_mappingBadge->setText(enabled ? tr("已开启") : tr("已关闭"));
-  m_mappingDetail->setText(m_serverMode ? tr("本机物理按键不转换；请在接收端选择适配方案。") :
-                          enabled ? (fullShortcutStatus.isEmpty()
-                              ? tr("%1 条已启用规则；仅转换所选 App 中的远程输入").arg(enabledRules)
-                              : fullShortcutStatus)
-                                  : tr("快捷键转换已关闭，键鼠共享仍正常工作"));
+  const auto summary =
+      m_serverMode ? tr("快捷键适配由接收端管理")
+      : enabled ? (fullShortcutStatus.isEmpty() ? tr("已开启 %1 条快捷键规则").arg(enabledRules) : fullShortcutStatus)
+                : tr("快捷键适配已关闭");
+  m_navigation[Shortcuts]->setToolTip(summary);
 }
 
 QVariantMap PersonalWindow::preferenceChanges() const
 {
   const QVariantMap values{
       {Settings::Gui::AutoStartCore, m_autoConnect->isChecked()},
+      {Settings::Gui::ShowVersionInTitle, m_showVersion->isChecked()},
+      {Settings::Gui::SymbolicTrayIcon, m_symbolicTray->isChecked()},
       {Settings::Gui::Autohide, m_autoHide->isChecked()},
       {Settings::Gui::CloseToTray, m_closeToTray->isChecked()},
       {Settings::Core::PreventSleep, m_preventSleep->isChecked()},
       {Settings::Client::InvertYScroll, m_invertScroll->isChecked()},
       {Settings::Client::YScrollScale, m_scrollSpeed->value()},
       {Settings::Client::InvertXScroll, m_invertXScroll->isChecked()},
-      {Settings::Client::XScrollScale, m_xScrollSpeed->value()}};
+      {Settings::Client::XScrollScale, m_xScrollSpeed->value()}
+  };
   QVariantMap changes;
   for (auto it = values.cbegin(); it != values.cend(); ++it)
-    if (it.value() != m_preferencesBaseline.value(it.key())) changes.insert(it.key(), it.value());
+    if (it.value() != m_preferencesBaseline.value(it.key()))
+      changes.insert(it.key(), it.value());
   return changes;
 }
 
 void PersonalWindow::reloadPreferences()
 {
   const bool writable = Settings::isWritable() && !m_configurationBusy;
-  for (auto *box : {m_autoConnect, m_autoHide, m_closeToTray, m_preventSleep, m_invertScroll, m_invertXScroll})
+  for (auto *box :
+       {m_autoConnect, m_autoHide, m_closeToTray, m_preventSleep, m_invertScroll, m_invertXScroll, m_showVersion,
+        m_symbolicTray})
     box->setEnabled(writable);
-  for (auto *spin : {m_scrollSpeed, m_xScrollSpeed}) spin->setEnabled(writable);
+  for (auto *spin : {m_scrollSpeed, m_xScrollSpeed})
+    spin->setEnabled(writable);
   m_savePreferences->setEnabled(writable && m_preferencesDirty);
   m_revertPreferences->setEnabled(!m_configurationBusy && m_preferencesDirty);
-  if (!Settings::isWritable()) m_preferencesMessage->setText(tr("设置当前只读，无法保存更改。"));
-  if (m_preferencesDirty) return;
+  if (!Settings::isWritable())
+    m_preferencesMessage->setText(tr("设置当前只读，无法保存更改。"));
+  if (m_preferencesDirty)
+    return;
   m_loadingPreferences = true;
   m_autoConnect->setChecked(Settings::value(Settings::Gui::AutoStartCore).toBool());
+  m_showVersion->setChecked(Settings::value(Settings::Gui::ShowVersionInTitle).toBool());
+  m_symbolicTray->setChecked(Settings::value(Settings::Gui::SymbolicTrayIcon).toBool());
   m_autoHide->setChecked(Settings::value(Settings::Gui::Autohide).toBool());
   m_closeToTray->setChecked(Settings::value(Settings::Gui::CloseToTray).toBool());
   m_preventSleep->setChecked(Settings::value(Settings::Core::PreventSleep).toBool());
@@ -541,13 +618,16 @@ void PersonalWindow::reloadPreferences()
   m_xScrollSpeed->setValue(Settings::value(Settings::Client::XScrollScale).toDouble());
   m_preferencesBaseline = {
       {Settings::Gui::AutoStartCore, m_autoConnect->isChecked()},
+      {Settings::Gui::ShowVersionInTitle, m_showVersion->isChecked()},
+      {Settings::Gui::SymbolicTrayIcon, m_symbolicTray->isChecked()},
       {Settings::Gui::Autohide, m_autoHide->isChecked()},
       {Settings::Gui::CloseToTray, m_closeToTray->isChecked()},
       {Settings::Core::PreventSleep, m_preventSleep->isChecked()},
       {Settings::Client::InvertYScroll, m_invertScroll->isChecked()},
       {Settings::Client::YScrollScale, m_scrollSpeed->value()},
       {Settings::Client::InvertXScroll, m_invertXScroll->isChecked()},
-      {Settings::Client::XScrollScale, m_xScrollSpeed->value()}};
+      {Settings::Client::XScrollScale, m_xScrollSpeed->value()}
+  };
   m_loadingPreferences = false;
   m_savePreferences->setEnabled(false);
   m_revertPreferences->setEnabled(false);
@@ -555,16 +635,20 @@ void PersonalWindow::reloadPreferences()
 
 void PersonalWindow::markPreferencesDirty()
 {
-  if (m_loadingPreferences) return;
+  if (m_loadingPreferences)
+    return;
   m_preferencesDirty = !preferenceChanges().isEmpty();
   m_savePreferences->setEnabled(!m_configurationBusy && m_preferencesDirty && Settings::isWritable());
   m_revertPreferences->setEnabled(!m_configurationBusy && m_preferencesDirty);
-  m_preferencesMessage->setText(m_preferencesDirty ? tr("有待应用的更改。修改远程鼠标或防休眠设置将短暂重新连接。") : tr("没有待应用的更改"));
+  m_preferencesMessage->setText(
+      m_preferencesDirty ? tr("有待应用的更改。修改远程鼠标或防休眠设置将短暂重新连接。") : tr("没有待应用的更改")
+  );
 }
 
 void PersonalWindow::savePreferences()
 {
-  if (m_configurationBusy || !Settings::isWritable()) return;
+  if (m_configurationBusy || !Settings::isWritable())
+    return;
   Q_EMIT preferencesApplyRequested(preferenceChanges());
 }
 
@@ -581,7 +665,8 @@ void PersonalWindow::setConnectionFeedback(const QString &message)
 
 void PersonalWindow::finishPreferencesApply(bool success, const QString &message)
 {
-  if (success) m_preferencesDirty = false;
+  if (success)
+    m_preferencesDirty = false;
   reloadPreferences();
   m_preferencesMessage->setText(message);
 }
@@ -594,18 +679,24 @@ void PersonalWindow::setConfigurationBusy(bool busy, bool allowDisconnect)
   refreshScreenLayout();
   m_primaryButton->setEnabled(m_connectionCanInteract && (!busy || (allowDisconnect && m_running)));
   const bool preferencesEnabled = !busy && Settings::isWritable();
-  for (auto *box : {m_autoConnect, m_autoHide, m_closeToTray, m_preventSleep, m_invertScroll, m_invertXScroll}) box->setEnabled(preferencesEnabled);
-  for (auto *spin : {m_scrollSpeed, m_xScrollSpeed}) spin->setEnabled(preferencesEnabled);
+  for (auto *box :
+       {m_autoConnect, m_autoHide, m_closeToTray, m_preventSleep, m_invertScroll, m_invertXScroll, m_showVersion,
+        m_symbolicTray})
+    box->setEnabled(preferencesEnabled);
+  for (auto *spin : {m_scrollSpeed, m_xScrollSpeed})
+    spin->setEnabled(preferencesEnabled);
   m_revertPreferences->setEnabled(!busy && m_preferencesDirty);
   m_advanced->setApplying(busy);
   m_connectionOptions->setEnabled(!busy);
+  m_manageDevices->setEnabled(!busy);
   m_savePreferences->setEnabled(!busy && m_preferencesDirty && Settings::isWritable());
   updateLoginStartup();
 }
 
 void PersonalWindow::refreshLoginStartup()
 {
-  if (m_loginStartup->isApplying()) return;
+  if (m_loginStartup->isApplying())
+    return;
   m_loginStartupFeedback.clear();
   m_loginStartupFailed = false;
   m_loginStartup->refresh();
@@ -639,10 +730,11 @@ void PersonalWindow::updateLoginStartup()
   } else {
     message = status.enabled ? tr("已开启，下次登录时会启动桌桥。") : tr("已关闭，下次登录时不会自动启动桌桥。");
   }
-  const QStringList details = status.error.isEmpty() ? QStringList{status.message, m_loginStartupFeedback}
-                                                    : QStringList{status.error};
+  const QStringList details =
+      status.error.isEmpty() ? QStringList{status.message, m_loginStartupFeedback} : QStringList{status.error};
   for (const auto &detail : details)
-    if (!detail.isEmpty() && !message.contains(detail)) message += QStringLiteral("\n") + detail;
+    if (!detail.isEmpty() && !message.contains(detail))
+      message += QStringLiteral("\n") + detail;
   m_loginStartupHint->setText(message);
   m_loginStartupHint->setProperty("dangerText", !status.error.isEmpty() || m_loginStartupFailed);
   m_loginStartupHint->setProperty("secondaryText", status.error.isEmpty() && !m_loginStartupFailed);
@@ -652,16 +744,20 @@ void PersonalWindow::updateLoginStartup()
 
 bool PersonalWindow::eventFilter(QObject *watched, QEvent *event)
 {
-  if (event->type() == QEvent::WindowActivate) refreshLoginStartup();
+  if (event->type() == QEvent::WindowActivate)
+    refreshLoginStartup();
   return QWidget::eventFilter(watched, event);
 }
 
 void PersonalWindow::refreshAppearance()
 {
-  if (m_updatingAppearance) return;
+  if (m_updatingAppearance)
+    return;
   m_updatingAppearance = true;
   applyPersonalStyle(this);
-  const QStringList icons{QStringLiteral("devices"), QStringLiteral("keyboard"), QStringLiteral("settings"), QStringLiteral("advanced")};
+  const QStringList icons{
+      QStringLiteral("devices"), QStringLiteral("keyboard"), QStringLiteral("settings"), QStringLiteral("advanced")
+  };
   for (int i = 0; i < m_navigation.size(); ++i) {
     const auto color = m_navigation[i]->isChecked() ? QColor(Qt::white) : palette().color(QPalette::WindowText);
     m_navigation[i]->setIcon(personalIcon(icons[i], color));

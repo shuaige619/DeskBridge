@@ -164,6 +164,8 @@ private:
   QString m_appPath;
   shortcuts::DeviceOS m_sourceOperatingSystem = shortcuts::DeviceOS::Unknown;
   bool m_serverModifierMapping = false;
+  bool m_sourceOperatingSystemFromIpc = false;
+  bool m_serverModifierMappingFromIpc = false;
   deskflow::layout::Snapshot m_screenLayout;
   quint32 m_nextLayoutRequestId = 0;
   quint32 m_pendingLayoutRequestId = 0;

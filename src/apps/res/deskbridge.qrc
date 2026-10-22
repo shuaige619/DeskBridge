@@ -3,5 +3,7 @@
         <file>deskbridge.png</file>
         <file>icons/deskbridge-tray.svg</file>
         <file>icons/deskbridge-symbolic.svg</file>
+        <file>icons/deskbridge-check.svg</file>
+        <file>icons/deskbridge-radio.svg</file>
     </qresource>
 </RCC>

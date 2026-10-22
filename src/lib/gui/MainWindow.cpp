@@ -8,17 +8,15 @@
  */
 
 #include "MainWindow.h"
-#include "ui_MainWindow.h"
+#include "MainWindowState.h"
 
 #include "Diagnostic.h"
 #include "StyleUtils.h"
 
 #include "dialogs/AboutDialog.h"
-#include "dialogs/ClientConfigDialog.h"
 #include "dialogs/FingerprintDialog.h"
 #include "dialogs/HelpDialog.h"
 #include "dialogs/ServerConfigDialog.h"
-#include "dialogs/SettingsDialog.h"
 
 #include "common/PlatformInfo.h"
 #include "common/Settings.h"
@@ -28,27 +26,32 @@
 #include "gui/TlsUtility.h"
 #include "gui/core/CoreProcess.h"
 #include "gui/ipc/DaemonIpcClient.h"
+#include "gui/validators/ComputerNameValidator.h"
 #include "gui/widgets/LogDock.h"
 #include "net/FingerprintDatabase.h"
 #include "net/SecureUtils.h"
-#include "widgets/StatusBar.h"
-#include "personal/PersonalWindow.h"
 #include "personal/AdvancedPage.h"
+#include "personal/ConnectionIdentity.h"
+#include "personal/ConnectionOptionsDialog.h"
+#include "personal/DialogStyle.h"
+#include "personal/PersonalStyle.h"
+#include "personal/PersonalWindow.h"
 #include "personal/PreferenceChanges.h"
 #include "personal/PreferencesApplyController.h"
-#include "personal/ShortcutPage.h"
-#include "personal/ShortcutApplyController.h"
-#include "personal/PersonalStyle.h"
+#include "personal/ReceiverDeviceControlDialog.h"
 #include "personal/ScreenLayoutPersistence.h"
+#include "personal/ShortcutApplyController.h"
+#include "personal/ShortcutPage.h"
+#include "widgets/StatusBar.h"
 
-#include <QCheckBox>
 #include <QApplication>
-#include <QComboBox>
+#include <QCheckBox>
 #include <QCloseEvent>
+#include <QComboBox>
 #include <QDesktopServices>
 #include <QDialogButtonBox>
-#include <QFormLayout>
 #include <QFileDialog>
+#include <QFormLayout>
 #include <QLocalServer>
 #include <QLocalSocket>
 #include <QMenu>
@@ -59,16 +62,17 @@
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QRegularExpressionValidator>
+#include <QSaveFile>
 #include <QScreen>
+#include <QScrollBar>
+#include <QSignalBlocker>
 #include <QSslCertificate>
 #include <QSslKey>
-#include <QSaveFile>
-#include <QSignalBlocker>
 #include <QTemporaryFile>
-#include <QScrollBar>
 #include <QVBoxLayout>
 
 #include <memory>
+#include <utility>
 
 #if defined(Q_OS_MACOS)
 #include <ApplicationServices/ApplicationServices.h>
@@ -77,7 +81,7 @@
 using namespace deskflow::gui;
 
 MainWindow::MainWindow()
-    : ui{std::make_unique<Ui::MainWindow>()},
+    : ui{std::make_unique<MainWindowState>()},
       m_coreProcess(m_serverConfig),
       m_trayIcon{new QSystemTrayIcon(this)},
       m_guiDupeChecker{new QLocalServer(this)},
@@ -162,8 +166,7 @@ MainWindow::MainWindow()
   if (TlsUtility::isEnabled()) {
     if (Settings::value(Settings::Security::KeySize).toInt() < 2048) {
       QMessageBox::information(
-          this, kAppName,
-          tr("Your current TLS key is smaller than the minimum allowed size, A new key 2048-bit key will be generated.")
+          this, kAppName, tr("现有证书密钥长度低于最低要求，将生成新的 2048 位密钥。另一台电脑可能需要重新信任本机。")
       );
       Settings::setValue(Settings::Security::KeySize, 2048);
     }
@@ -201,10 +204,9 @@ deskflow::gui::personal::ShortcutPage *MainWindow::personalShortcutPage() const
 
 void MainWindow::setupPersonalUi()
 {
-  if (QString::fromLatin1(kRuntimeId) == QString::fromLatin1(kAppId)) return;
-  m_legacyCentral = takeCentralWidget();
-  m_legacyCentral->setParent(this);
-  m_legacyCentral->hide();
+  m_controllerBindings = takeCentralWidget();
+  m_controllerBindings->setParent(this);
+  m_controllerBindings->hide();
   m_personalUi = new personal::PersonalWindow(this);
   m_layoutPersistence = std::make_unique<personal::ScreenLayoutPersistence>(m_serverConfig);
   setCentralWidget(m_personalUi);
@@ -214,13 +216,50 @@ void MainWindow::setupPersonalUi()
   m_menuView->removeAction(m_logDock->toggleViewAction());
   connect(m_personalUi, &personal::PersonalWindow::connectRequested, this, &MainWindow::startCore);
   connect(m_personalUi, &personal::PersonalWindow::disconnectRequested, this, &MainWindow::stopCore);
-  connect(m_personalUi, &personal::PersonalWindow::connectionOptionsRequested, this, &MainWindow::openPersonalConnectionOptions);
+  connect(
+      m_personalUi, &personal::PersonalWindow::connectionOptionsRequested, this,
+      &MainWindow::openPersonalConnectionOptions
+  );
+  connect(m_personalUi, &personal::PersonalWindow::deviceManagementRequested, this, [this] {
+    if (m_coreProcess.mode() == CoreMode::Server) {
+      showConfigureServer({});
+      return;
+    }
+    personal::ReceiverDeviceControlDialog dialog(
+        m_coreProcess.screenLayout(), Settings::value(Settings::Client::RemoteHost).toString(),
+        Settings::value(Settings::Core::ComputerName).toString(),
+        m_coreProcess.connectionState() == ConnectionState::Connected, this
+    );
+    dialog.exec();
+    // A receiver overview never opens or saves the local source configuration.
+    // The role may change while its modal event loop is running.
+    if (m_coreProcess.mode() != CoreMode::Client)
+      return;
+    using Destination = personal::ReceiverDeviceControlDialog::Destination;
+    switch (dialog.destination()) {
+    case Destination::Layout:
+      m_personalUi->showPage(personal::PersonalWindow::Connection);
+      break;
+    case Destination::Shortcuts:
+      m_personalUi->showPage(personal::PersonalWindow::Shortcuts);
+      break;
+    case Destination::Connection:
+      openPersonalConnectionOptions();
+      break;
+    case Destination::None:
+      break;
+    }
+  });
   auto *advanced = m_personalUi->advancedPage();
   advanced->setLogDocument(m_logDock->logDocument());
   connect(advanced, &personal::AdvancedPage::fingerprintRequested, this, &MainWindow::showMyFingerprint);
-  connect(advanced, &personal::AdvancedPage::regenerateCertificateRequested, this, &MainWindow::regeneratePersonalCertificate);
+  connect(
+      advanced, &personal::AdvancedPage::regenerateCertificateRequested, this,
+      &MainWindow::regeneratePersonalCertificate
+  );
   connect(advanced, &personal::AdvancedPage::resetAllRequested, this, [this] {
-    if (!guardPersonalConfigurationChange()) clearSettings();
+    if (!guardPersonalConfigurationChange())
+      clearSettings();
   });
   connect(advanced, &personal::AdvancedPage::applyRequested, this, [this](const QVariantMap &changes) {
     applyPersonalPreferences(changes, PreferencesTarget::Advanced);
@@ -228,44 +267,78 @@ void MainWindow::setupPersonalUi()
   connect(m_personalUi, &personal::PersonalWindow::preferencesApplyRequested, this, [this](const QVariantMap &changes) {
     applyPersonalPreferences(changes, PreferencesTarget::General);
   });
-  connect(personalShortcutPage(), &personal::ShortcutPage::keyboardCompatibilityRequested,
-          this, &MainWindow::openKeyboardCompatibility);
-  connect(m_personalUi, &personal::PersonalWindow::screenLayoutRequested, this, &MainWindow::requestPersonalScreenLayout);
+  connect(
+      personalShortcutPage(), &personal::ShortcutPage::keyboardCompatibilityRequested, this,
+      &MainWindow::openKeyboardCompatibility
+  );
+  connect(
+      m_personalUi, &personal::PersonalWindow::screenLayoutRequested, this, &MainWindow::requestPersonalScreenLayout
+  );
   connect(m_personalUi, &personal::PersonalWindow::screenMoveRequested, this, &MainWindow::requestPersonalScreenMove);
-  connect(&m_coreProcess, &CoreProcess::screenLayoutChanged, this, [this] {
-    if (!m_layoutPending) m_layoutFeedback.clear();
-    refreshPersonalUi();
-  }, Qt::QueuedConnection);
-  connect(&m_coreProcess, &CoreProcess::layoutRequestReceived, this, &MainWindow::persistPersonalScreenLayout,
-          Qt::QueuedConnection);
-  connect(&m_coreProcess, &CoreProcess::layoutMoveReceived, this, &MainWindow::persistPersonalScreenMove,
-          Qt::QueuedConnection);
-  connect(&m_coreProcess, &CoreProcess::layoutRequestFinished, this, [this](bool success, const QString &error) {
-    m_layoutPending = false;
-    m_layoutUncertain = false;
-    m_layoutFeedback = success ? tr("屏幕布局已同步。") : error;
-    refreshPersonalUi();
-  }, Qt::QueuedConnection);
-  connect(&m_coreProcess, &CoreProcess::layoutApplyFinished, this,
-          [this](quint32 requestId, bool success, const QString &error) {
-    if (!m_layoutPersistence->isPending() || requestId != m_layoutRequestId) return;
-    QString restoreError;
-    m_layoutPersistence->finish(success, &restoreError);
-    m_layoutPending = false;
-    m_layoutUncertain = false;
-    m_layoutFeedback = success ? tr("屏幕布局已同步。") : error;
-    if (!restoreError.isEmpty()) m_layoutFeedback += QStringLiteral(" ") + restoreError;
-    refreshPersonalUi();
-  }, Qt::QueuedConnection);
-  connect(&m_coreProcess, &CoreProcess::layoutSynchronizationUncertain, this, [this](const QString &error) {
-    m_layoutUncertain = true;
-    m_layoutFeedback = error + tr(" 请点按“停止共享”以恢复原布局，然后重新开始共享。");
-    refreshPersonalUi();
-  }, Qt::QueuedConnection);
-  connect(personalShortcutPage(), &personal::ShortcutPage::applyRequested, this, &MainWindow::personalShortcutApplyRequested);
+  connect(
+      &m_coreProcess, &CoreProcess::screenLayoutChanged, this,
+      [this] {
+        if (!m_layoutPending)
+          m_layoutFeedback.clear();
+        refreshPersonalUi();
+      },
+      Qt::QueuedConnection
+  );
+  connect(
+      &m_coreProcess, &CoreProcess::layoutRequestReceived, this, &MainWindow::persistPersonalScreenLayout,
+      Qt::QueuedConnection
+  );
+  connect(
+      &m_coreProcess, &CoreProcess::layoutMoveReceived, this, &MainWindow::persistPersonalScreenMove,
+      Qt::QueuedConnection
+  );
+  connect(
+      &m_coreProcess, &CoreProcess::layoutRequestFinished, this,
+      [this](bool success, const QString &error) {
+        m_layoutPending = false;
+        m_layoutUncertain = false;
+        m_layoutFeedback = success ? tr("屏幕布局已同步。") : error;
+        refreshPersonalUi();
+      },
+      Qt::QueuedConnection
+  );
+  connect(
+      &m_coreProcess, &CoreProcess::layoutApplyFinished, this,
+      [this](quint32 requestId, bool success, const QString &error) {
+        if (!m_layoutPersistence->isPending() || requestId != m_layoutRequestId)
+          return;
+        QString restoreError;
+        m_layoutPersistence->finish(success, &restoreError);
+        m_layoutPending = false;
+        m_layoutUncertain = false;
+        m_layoutFeedback = success ? tr("屏幕布局已同步。") : error;
+        if (!restoreError.isEmpty())
+          m_layoutFeedback += QStringLiteral(" ") + restoreError;
+        refreshPersonalUi();
+      },
+      Qt::QueuedConnection
+  );
+  connect(
+      &m_coreProcess, &CoreProcess::layoutSynchronizationUncertain, this,
+      [this](const QString &error) {
+        m_layoutUncertain = true;
+        m_layoutFeedback = error + tr(" 请点按“停止共享”以恢复原布局，然后重新开始共享。");
+        refreshPersonalUi();
+      },
+      Qt::QueuedConnection
+  );
+  connect(
+      personalShortcutPage(), &personal::ShortcutPage::applyRequested, this, &MainWindow::personalShortcutApplyRequested
+  );
   connect(Settings::instance(), &Settings::settingsWritableChanged, this, &MainWindow::refreshPersonalUi);
-  connect(&m_coreProcess, &CoreProcess::sourceOperatingSystemChanged, this, [this] { refreshPersonalUi(); }, Qt::QueuedConnection);
-  connect(&m_coreProcess, &CoreProcess::serverModifierMappingChanged, this, [this] { refreshPersonalUi(); }, Qt::QueuedConnection);
+  connect(
+      &m_coreProcess, &CoreProcess::sourceOperatingSystemChanged, this, [this] { refreshPersonalUi(); },
+      Qt::QueuedConnection
+  );
+  connect(
+      &m_coreProcess, &CoreProcess::serverModifierMappingChanged, this, [this] { refreshPersonalUi(); },
+      Qt::QueuedConnection
+  );
   setWindowTitle(tr("桌桥 DeskBridge"));
 #ifdef Q_OS_MACOS
   setUnifiedTitleAndToolBarOnMac(true);
@@ -280,55 +353,76 @@ void MainWindow::setupPersonalUi()
   personal::PreferencesApplyController::Operations operations{
       [](const QStringList &keys) {
         QVariantMap previous;
-        for (const auto &key : keys) previous.insert(key, Settings::proxy().value(key));
+        for (const auto &key : keys)
+          previous.insert(key, Settings::proxy().value(key));
         return previous;
       },
       [this](const QVariantMap &changes, QString *error) { return writePersonalPreferences(changes, error); },
       [this](const QVariantMap &previous, QString *error) { return restorePersonalPreferences(previous, error); },
       [this] { return m_coreProcess.processState(); },
       [this] { return m_coreProcess.connectionState(); },
-      [this] { applyConfig(); m_coreProcess.start(); },
-      [this] { m_coreProcess.stop(); }};
+      [this] {
+        applyConfig();
+        m_coreProcess.start();
+      },
+      [this] { m_coreProcess.stop(); }
+  };
   auto *preferences = new personal::PreferencesApplyController(std::move(operations), this);
-  connect(&m_coreProcess, &CoreProcess::processStateChanged, preferences,
-          &personal::PreferencesApplyController::notifyProcessState, Qt::QueuedConnection);
-  connect(&m_coreProcess, &CoreProcess::connectionStateChanged, preferences,
-          &personal::PreferencesApplyController::notifyConnectionState, Qt::QueuedConnection);
-  connect(&m_coreProcess, &CoreProcess::error, preferences,
-          &personal::PreferencesApplyController::notifyStartFailure, Qt::QueuedConnection);
+  connect(
+      &m_coreProcess, &CoreProcess::processStateChanged, preferences,
+      &personal::PreferencesApplyController::notifyProcessState, Qt::QueuedConnection
+  );
+  connect(
+      &m_coreProcess, &CoreProcess::connectionStateChanged, preferences,
+      &personal::PreferencesApplyController::notifyConnectionState, Qt::QueuedConnection
+  );
+  connect(
+      &m_coreProcess, &CoreProcess::error, preferences, &personal::PreferencesApplyController::notifyStartFailure,
+      Qt::QueuedConnection
+  );
   connect(preferences, &personal::PreferencesApplyController::applyingChanged, this, [this] { refreshPersonalUi(); });
   connect(preferences, &personal::PreferencesApplyController::statusChanged, this, [this](const QString &message) {
-    if (m_preferencesTarget == PreferencesTarget::Advanced) m_personalUi->advancedPage()->setStatusMessage(message);
-    else if (m_preferencesTarget == PreferencesTarget::Keyboard) personalShortcutPage()->setStatusMessage(message);
-    else if (m_preferencesTarget == PreferencesTarget::Connection) m_personalUi->setConnectionFeedback(message);
-    else m_personalUi->setPreferencesStatus(message);
+    if (m_preferencesTarget == PreferencesTarget::Advanced)
+      m_personalUi->advancedPage()->setStatusMessage(message);
+    else if (m_preferencesTarget == PreferencesTarget::Keyboard)
+      personalShortcutPage()->setStatusMessage(message);
+    else if (m_preferencesTarget == PreferencesTarget::Connection)
+      m_personalUi->setConnectionFeedback(message);
+    else
+      m_personalUi->setPreferencesStatus(message);
   });
-  connect(preferences, &personal::PreferencesApplyController::finished, this, [this](bool success, const QString &message) {
-    QString feedback = message;
-    if (m_certificateMaintenance && !m_certificateMaintenance->backupPath.isEmpty())
-      feedback += tr(" 原证书备份：%1").arg(m_certificateMaintenance->backupPath);
-    if (m_preferencesTarget == PreferencesTarget::Advanced) m_personalUi->advancedPage()->applied(success, feedback);
-    else if (m_preferencesTarget == PreferencesTarget::Keyboard) personalShortcutPage()->setStatusMessage(message);
-    else if (m_preferencesTarget == PreferencesTarget::Connection) m_personalUi->setConnectionFeedback(message);
-    else m_personalUi->finishPreferencesApply(success, message);
-    m_certificateMaintenance.reset();
-    m_fingerprint = {QCryptographicHash::Sha256, TlsUtility::certFingerprint()};
-    refreshPersonalUi();
-    if (m_preferencesTarget == PreferencesTarget::Connection) {
-      applyConfig();
-    }
-    if (success && m_preferencesTarget == PreferencesTarget::Connection) {
-      if (m_resetSourceFallbackAfterPreferences) personalShortcutPage()->clearSourceOperatingSystemFallback();
-      if (m_openLayoutAfterPreferences) QTimer::singleShot(0, this, [this] { showConfigureServer({}); });
-    }
-    m_openLayoutAfterPreferences = false;
-    m_resetSourceFallbackAfterPreferences = false;
-  });
+  connect(
+      preferences, &personal::PreferencesApplyController::finished, this, [this](bool success, const QString &message) {
+        QString feedback = message;
+        if (m_certificateMaintenance && !m_certificateMaintenance->backupPath.isEmpty())
+          feedback += tr(" 原证书备份：%1").arg(m_certificateMaintenance->backupPath);
+        if (m_preferencesTarget == PreferencesTarget::Advanced)
+          m_personalUi->advancedPage()->applied(success, feedback);
+        else if (m_preferencesTarget == PreferencesTarget::Keyboard)
+          personalShortcutPage()->setStatusMessage(message);
+        else if (m_preferencesTarget == PreferencesTarget::Connection)
+          m_personalUi->setConnectionFeedback(message);
+        else
+          m_personalUi->finishPreferencesApply(success, message);
+        m_certificateMaintenance.reset();
+        m_fingerprint = {QCryptographicHash::Sha256, TlsUtility::certFingerprint()};
+        refreshPersonalUi();
+        if (m_preferencesTarget == PreferencesTarget::Connection) {
+          applyConfig();
+        }
+        if (success && m_preferencesTarget == PreferencesTarget::Connection) {
+          if (m_resetSourceFallbackAfterPreferences)
+            personalShortcutPage()->clearSourceOperatingSystemFallback();
+        }
+        m_resetSourceFallbackAfterPreferences = false;
+      }
+  );
 }
 
 void MainWindow::refreshPersonalUi()
 {
-  if (!m_personalUi) return;
+  if (!m_personalUi)
+    return;
   const auto process = m_coreProcess.processState();
   const bool connected = m_coreProcess.connectionState() == ConnectionState::Connected;
   const bool running = process != ProcessState::Stopped;
@@ -346,14 +440,16 @@ void MainWindow::refreshPersonalUi()
   m_personalUi->setDeviceContext(sourceOS, server);
   personalShortcutPage()->setSourceOperatingSystem(detectedOS);
   personalShortcutPage()->setServerModifierMapping(m_coreProcess.serverModifierMapping());
-  m_personalUi->setConnectionStatus(m_coreProcess.connectionState(), process, TlsUtility::isEnabled(),
-                                    m_secureSocket, canRunCore(), address,
-                                    Settings::value(Settings::Core::ComputerName).toString());
+  m_personalUi->setConnectionStatus(
+      m_coreProcess.connectionState(), process, TlsUtility::isEnabled(), m_secureSocket, canRunCore(), address,
+      Settings::value(Settings::Core::ComputerName).toString()
+  );
   auto screenLayout = server && !running ? m_serverConfig.screenLayout() : m_coreProcess.screenLayout();
   if (server && running) {
     const auto configured = m_serverConfig.screenLayout();
     screenLayout.editable = screenLayout.editable && configured.editable;
-    if (!configured.editable) screenLayout.error = configured.error;
+    if (!configured.editable)
+      screenLayout.error = configured.error;
   }
   if (!Settings::isWritable()) {
     screenLayout.editable = false;
@@ -364,10 +460,16 @@ void MainWindow::refreshPersonalUi()
   int activeRules = 0;
   for (const auto &rule : effective.rules) {
     if (m_coreProcess.serverModifierMapping() && mapping.habit != deskflow::shortcuts::Habit::Custom &&
-        (rule.id == QStringLiteral("copy") || rule.id == QStringLiteral("paste"))) continue;
+        (rule.id == QStringLiteral("copy") || rule.id == QStringLiteral("paste")))
+      continue;
     bool overlaps = false;
-    for (const auto &app : rule.apps) if (mapping.apps.contains(app)) { overlaps = true; break; }
-    if (rule.enabled && overlaps) ++activeRules;
+    for (const auto &app : rule.apps)
+      if (mapping.apps.contains(app)) {
+        overlaps = true;
+        break;
+      }
+    if (rule.enabled && overlaps)
+      ++activeRules;
   }
   QString fullShortcutStatus;
   if (mapping.fullShortcuts) {
@@ -379,99 +481,49 @@ void MainWindow::refreshPersonalUi()
       fullShortcutStatus = tr("完整适配：请先选择应用或启用“用于全部应用”");
     else
       fullShortcutStatus = mapping.allApplications ? tr("完整快捷键适配 · 全部应用 · Ctrl+空格保留")
-                                                  : tr("完整快捷键适配 · 所选应用 · Ctrl+空格保留");
+                                                   : tr("完整快捷键适配 · 所选应用 · Ctrl+空格保留");
   }
   m_personalUi->setMappingStatus(mapping.enabled && !server, activeRules, fullShortcutStatus);
   m_personalUi->reloadPreferences();
   if (m_personalTrayStatus) {
     const auto trayState = process == ProcessState::Stopping ? tr("○ 正在停止共享…")
-        : server ? (running ? tr("● 正在共享本机键鼠") : tr("○ 未启动共享"))
-        : (connected ? tr("● 已连接来源电脑") : (running ? tr("○ 正在连接来源电脑…") : tr("○ 未连接来源电脑")));
+                           : server                          ? (running ? tr("● 正在共享本机键鼠") : tr("○ 未启动共享"))
+                                                             : (connected ? tr("● 已连接来源电脑")
+                                                                          : (running ? tr("○ 正在连接来源电脑…") : tr("○ 未连接来源电脑")));
     m_personalTrayStatus->setText(trayState);
-    m_personalTrayMapping->setText(server ? tr("快捷键由接收端适配") :
-        (mapping.enabled ? (fullShortcutStatus.isEmpty() ? tr("快捷键映射：已开启 · %1 条规则").arg(activeRules)
-                                                       : fullShortcutStatus) : tr("快捷键映射：已关闭")));
-    m_personalTrayToggle->setText(server ? (running ? tr("停止共享") : tr("开始共享"))
-                                       : (running ? tr("断开连接") : tr("连接来源电脑")));
-    m_personalTrayToggle->setEnabled(!applying && !m_layoutPending && process != ProcessState::Stopping && (running || canRunCore()));
+    m_personalTrayMapping->setText(
+        server
+            ? tr("快捷键由接收端适配")
+            : (mapping.enabled ? (fullShortcutStatus.isEmpty() ? tr("快捷键映射：已开启 · %1 条规则").arg(activeRules)
+                                                               : fullShortcutStatus)
+                               : tr("快捷键映射：已关闭"))
+    );
+    m_personalTrayToggle->setText(
+        server ? (running ? tr("停止共享") : tr("开始共享")) : (running ? tr("断开连接") : tr("连接来源电脑"))
+    );
+    m_personalTrayToggle->setEnabled(
+        !applying && !m_layoutPending && process != ProcessState::Stopping && (running || canRunCore())
+    );
     m_trayIcon->setToolTip(server ? tr("桌桥 · 键鼠来源") : (connected ? tr("桌桥 · 已连接") : tr("桌桥 · 未连接")));
   }
 }
 
 void MainWindow::openPersonalConnectionOptions()
 {
-  if (guardPersonalConfigurationChange()) return;
-  QDialog dialog(this);
-  dialog.setWindowModality(Qt::WindowModal);
-  dialog.setWindowTitle(tr("连接选项"));
-  dialog.setMinimumWidth(420);
-  auto *layout = new QVBoxLayout(&dialog);
-  layout->setContentsMargins(24, 22, 24, 20);
-  layout->setSpacing(16);
-  auto *intro = new QLabel(tr("选择此电脑的角色。来源端提供物理键鼠，接收端负责快捷键适配。"), &dialog);
-  intro->setWordWrap(true);
-  layout->addWidget(intro);
-  auto *form = new QFormLayout;
-  auto *role = new QComboBox(&dialog);
-  role->setObjectName(QStringLiteral("personalComputerRole"));
-  role->addItem(tr("接收另一台电脑的键鼠（客户端）"), static_cast<int>(CoreMode::Client));
-  role->addItem(tr("共享本机物理键鼠（服务端）"), static_cast<int>(CoreMode::Server));
-  role->setCurrentIndex(qMax(0, role->findData(static_cast<int>(m_coreProcess.mode()))));
-  role->setEnabled(Settings::isWritable());
-  form->addRow(tr("本机角色"), role);
-  form->addRow(tr("本机系统"), new QLabel(personal::displayOperatingSystem(deskflow::shortcuts::localOS()), &dialog));
-  auto *host = new QLineEdit(Settings::value(Settings::Client::RemoteHost).toString(), &dialog);
-  host->setPlaceholderText(tr("键鼠来源电脑的 IP 地址或主机名"));
-  host->setEnabled(Settings::isWritable());
-  form->addRow(tr("来源电脑地址"), host);
-  auto *computer = new QLabel(Settings::value(Settings::Core::ComputerName).toString(), &dialog);
-  computer->setTextInteractionFlags(Qt::TextSelectableByMouse);
-  form->addRow(tr("本机屏幕名称"), computer);
-  layout->addLayout(form);
-  auto *retry = new QCheckBox(tr("连接中断时逐步增加重试间隔"), &dialog);
-  retry->setObjectName(QStringLiteral("personalDynamicRetry"));
-  retry->setChecked(Settings::value(Settings::Client::DynamicConnectionRetry).toBool());
-  layout->addWidget(retry);
-  auto *serverLayout = new QPushButton(tr("保存并编辑屏幕布局…"), &dialog);
-  serverLayout->setObjectName(QStringLiteral("personalServerLayout"));
-  layout->addWidget(serverLayout, 0, Qt::AlignLeft);
-  auto *schemes = new QPushButton(tr("来源系统与一键快捷键方案…"), &dialog);
-  layout->addWidget(schemes, 0, Qt::AlignLeft);
-  auto *note = new QLabel(tr("角色不会自动接管另一台电脑的物理键鼠。更改地址或角色会短暂重启共享。"), &dialog);
-  note->setWordWrap(true);
-  layout->addWidget(note);
-  auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, &dialog);
-  auto *save = buttons->button(QDialogButtonBox::Save);
-  save->setText(tr("保存"));
-  auto updateRoleControls = [role, host, retry, serverLayout, save] {
-    const bool server = static_cast<CoreMode>(role->currentData().toInt()) == CoreMode::Server;
-    host->setEnabled(Settings::isWritable() && !server);
-    retry->setEnabled(Settings::isWritable() && !server);
-    serverLayout->setEnabled(Settings::isWritable() && server);
-    save->setEnabled(Settings::isWritable() && (server || !host->text().trimmed().isEmpty()));
-  };
-  connect(host, &QLineEdit::textChanged, &dialog, updateRoleControls);
-  connect(role, &QComboBox::currentIndexChanged, &dialog, updateRoleControls);
-  updateRoleControls();
-  bool openLayout = false;
-  bool openSchemes = false;
-  connect(serverLayout, &QPushButton::clicked, &dialog, [&] { openLayout = true; dialog.accept(); });
-  connect(schemes, &QPushButton::clicked, &dialog, [&] { openSchemes = true; dialog.reject(); });
-  connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
-  connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-  layout->addWidget(buttons);
-  if (dialog.exec() != QDialog::Accepted) {
-    if (openSchemes) m_personalUi->showPage(personal::PersonalWindow::Shortcuts);
+  if (guardPersonalConfigurationChange())
     return;
-  }
-  const QString address = host->text().trimmed();
-  const auto mode = static_cast<CoreMode>(role->currentData().toInt());
-  const bool modeChanged = m_coreProcess.mode() != mode;
-  const bool addressChanged = mode == CoreMode::Client && address != Settings::value(Settings::Client::RemoteHost).toString();
-  QVariantMap changes;
-  if (modeChanged) changes.insert(Settings::Core::CoreMode, QVariant::fromValue(mode));
-  if (retry->isChecked() != Settings::value(Settings::Client::DynamicConnectionRetry).toBool())
-    changes.insert(Settings::Client::DynamicConnectionRetry, retry->isChecked());
+  QStringList otherNames;
+  for (const auto &computer : std::as_const(m_serverConfig).computers())
+    if (!computer.isNull()) {
+      if (!computer.isServer())
+        otherNames.append(computer.name());
+      otherNames.append(computer.aliases());
+    }
+  personal::ConnectionOptionsDialog dialog(otherNames, this);
+  if (dialog.exec() != QDialog::Accepted)
+    return;
+  auto changes = dialog.changes();
+  const bool addressChanged = changes.contains(Settings::Client::RemoteHost);
   if (addressChanged) {
     QString error;
     auto next = deskflow::shortcuts::load(&error);
@@ -483,22 +535,24 @@ void MainWindow::openPersonalConnectionOptions()
       next.sourceOS = deskflow::shortcuts::DeviceOS::Unknown;
       changes.insert(Settings::Client::ShortcutConfig, deskflow::shortcuts::toJson(next));
     }
-    changes.insert(Settings::Client::RemoteHost, address);
   }
-  m_openLayoutAfterPreferences = openLayout;
   m_resetSourceFallbackAfterPreferences = addressChanged;
   applyPersonalPreferences(changes, PreferencesTarget::Connection);
 }
 
 bool MainWindow::guardPersonalConfigurationChange()
 {
-  if (!m_personalUi) return false;
-  if (auto *preferences = findChild<personal::PreferencesApplyController *>(); preferences && preferences->isApplying()) {
+  if (!m_personalUi)
+    return false;
+  if (auto *preferences = findChild<personal::PreferencesApplyController *>();
+      preferences && preferences->isApplying()) {
     showAndActivate();
-    m_personalUi->showPage(m_preferencesTarget == PreferencesTarget::General ? personal::PersonalWindow::General
-                          : m_preferencesTarget == PreferencesTarget::Keyboard ? personal::PersonalWindow::Shortcuts
-                          : m_preferencesTarget == PreferencesTarget::Connection ? personal::PersonalWindow::Connection
-                                                                               : personal::PersonalWindow::Advanced);
+    m_personalUi->showPage(
+        m_preferencesTarget == PreferencesTarget::General      ? personal::PersonalWindow::General
+        : m_preferencesTarget == PreferencesTarget::Keyboard   ? personal::PersonalWindow::Shortcuts
+        : m_preferencesTarget == PreferencesTarget::Connection ? personal::PersonalWindow::Connection
+                                                               : personal::PersonalWindow::Advanced
+    );
     return true;
   }
   if (m_layoutPending) {
@@ -507,7 +561,8 @@ bool MainWindow::guardPersonalConfigurationChange()
     return true;
   }
   const auto *transaction = findChild<personal::ShortcutApplyController *>();
-  if (!transaction || !transaction->isApplying()) return false;
+  if (!transaction || !transaction->isApplying())
+    return false;
   showAndActivate();
   m_personalUi->showPage(personal::PersonalWindow::Shortcuts);
   personalShortcutPage()->setStatusMessage(tr("正在应用更改，请完成后再调整连接或设置。"));
@@ -516,7 +571,8 @@ bool MainWindow::guardPersonalConfigurationChange()
 
 void MainWindow::requestPersonalScreenLayout(deskflow::layout::Direction direction)
 {
-  if (guardPersonalConfigurationChange()) return;
+  if (guardPersonalConfigurationChange())
+    return;
   m_layoutFeedback.clear();
   m_layoutUncertain = false;
   if (m_coreProcess.mode() == CoreMode::Server && m_coreProcess.processState() == ProcessState::Stopped) {
@@ -539,7 +595,8 @@ void MainWindow::requestPersonalScreenLayout(deskflow::layout::Direction directi
 
 void MainWindow::requestPersonalScreenMove(const deskflow::layout::Move &move)
 {
-  if (guardPersonalConfigurationChange()) return;
+  if (guardPersonalConfigurationChange())
+    return;
   m_layoutFeedback.clear();
   m_layoutUncertain = false;
   if (m_coreProcess.mode() == CoreMode::Server && m_coreProcess.processState() == ProcessState::Stopped) {
@@ -566,7 +623,8 @@ void MainWindow::persistPersonalScreenMove(quint32 requestId, const deskflow::la
   const auto *preferences = findChild<personal::PreferencesApplyController *>();
   QString error;
   if (m_coreProcess.mode() != CoreMode::Server || m_serverConfigDialogVisible || QApplication::activeModalWidget() ||
-      (shortcuts && shortcuts->isApplying()) || (preferences && preferences->isApplying()) || m_layoutPersistence->isPending()) {
+      (shortcuts && shortcuts->isApplying()) || (preferences && preferences->isApplying()) ||
+      m_layoutPersistence->isPending()) {
     error = tr("来源电脑正在修改设置，请稍后重新调整布局。");
   } else if (m_layoutPersistence->prepareMove(move, &error)) {
     m_layoutRequestId = requestId;
@@ -576,14 +634,16 @@ void MainWindow::persistPersonalScreenMove(quint32 requestId, const deskflow::la
   refreshPersonalUi();
 }
 
-void MainWindow::persistPersonalScreenLayout(quint32 requestId, deskflow::layout::Direction expected,
-                                           deskflow::layout::Direction desired)
+void MainWindow::persistPersonalScreenLayout(
+    quint32 requestId, deskflow::layout::Direction expected, deskflow::layout::Direction desired
+)
 {
   const auto *shortcuts = findChild<personal::ShortcutApplyController *>();
   const auto *preferences = findChild<personal::PreferencesApplyController *>();
   QString error;
   if (m_coreProcess.mode() != CoreMode::Server || m_serverConfigDialogVisible || QApplication::activeModalWidget() ||
-      (shortcuts && shortcuts->isApplying()) || (preferences && preferences->isApplying()) || m_layoutPersistence->isPending()) {
+      (shortcuts && shortcuts->isApplying()) || (preferences && preferences->isApplying()) ||
+      m_layoutPersistence->isPending()) {
     error = tr("来源电脑正在修改设置，请稍后重新调整布局。");
   } else if (m_layoutPersistence->prepare(expected, desired, &error)) {
     m_layoutRequestId = requestId;
@@ -606,7 +666,8 @@ void MainWindow::restoreWindow()
     } else {
       saved.setSize(saved.size().boundedTo(available.size()));
       setGeometry(saved);
-      if (!available.contains(frameGeometry())) move(available.center() - rect().center());
+      if (!available.contains(frameGeometry()))
+        move(available.center() - rect().center());
     }
     return;
   }
@@ -749,7 +810,8 @@ void MainWindow::connectSlots()
 
 void MainWindow::toggleLogVisible(bool visible)
 {
-  if (m_personalUi) return;
+  if (m_personalUi)
+    return;
   // When the main window is hidden e.g. close to tray / minimized), this also triggers the log visibility toggle,
   // but we don't want to hide the log in this case since we would need to un-hide it when the window is shown again.
   if (!isVisible() || isMinimized()) {
@@ -782,6 +844,10 @@ void MainWindow::toggleLogVisible(bool visible)
 void MainWindow::settingsChanged(const QString &key)
 {
   refreshPersonalUi();
+  if (key == Settings::Gui::ShowVersionInTitle)
+    applyConfig();
+  if (key == Settings::Gui::SymbolicTrayIcon)
+    setTrayIcon();
   if (key == Settings::Log::Level) {
     m_coreProcess.applyLogLevel();
     return;
@@ -847,7 +913,8 @@ void MainWindow::coreProcessError(CoreProcess::Error error)
 
 void MainWindow::startCore()
 {
-  if (guardPersonalConfigurationChange()) return;
+  if (guardPersonalConfigurationChange())
+    return;
   // Save current IP state when server starts
   if (m_coreProcess.mode() == CoreMode::Server && Settings::value(Settings::Core::Interface).toString().isEmpty()) {
     m_serverStartIPs = NetworkMonitor::validAddresses();
@@ -865,7 +932,8 @@ void MainWindow::stopCore()
     m_coreProcess.stop();
     return;
   }
-  if (guardPersonalConfigurationChange()) return;
+  if (guardPersonalConfigurationChange())
+    return;
   qDebug() << "stopping core process";
   m_coreProcess.stop();
   m_actionStartCore->setVisible(true);
@@ -916,62 +984,57 @@ void MainWindow::openGetNewVersionUrl() const
 
 void MainWindow::openSettings()
 {
-  if (m_personalUi) {
-    showAndActivate();
-    m_personalUi->showPage(personal::PersonalWindow::General);
-    return;
-  }
-  openAdvancedSettings();
+  showAndActivate();
+  m_personalUi->showPage(personal::PersonalWindow::General);
 }
 
 void MainWindow::openAdvancedSettings()
 {
-  if (m_personalUi) {
-    showAndActivate();
-    m_personalUi->showPage(personal::PersonalWindow::Advanced);
-    return;
-  }
-  if (guardPersonalConfigurationChange()) return;
-  auto dialog = SettingsDialog(this, m_serverConfig, m_logDock->logDocument());
-
-  connect(&dialog, &SettingsDialog::fingerprintRequested, &dialog, [this, &dialog] {
-    FingerprintDialog fingerprintDialog(&dialog, m_fingerprint);
-    fingerprintDialog.exec();
-  });
-  connect(&dialog, &SettingsDialog::requestRemoveAllSettings, this, &MainWindow::clearSettings, Qt::UniqueConnection);
-  if (dialog.exec() == QDialog::Accepted) {
-    Settings::save();
-    disconnect(&dialog, &SettingsDialog::requestRemoveAllSettings, nullptr, nullptr);
-
-    applyConfig();
-
-    if (m_coreProcess.isStarted()) {
-      m_coreProcess.restart();
-    }
-    refreshPersonalUi();
-  }
+  showAndActivate();
+  m_personalUi->showPage(personal::PersonalWindow::Advanced);
 }
 
 void MainWindow::applyPersonalPreferences(const QVariantMap &changes, PreferencesTarget target)
 {
-  if (guardPersonalConfigurationChange()) return;
+  if (guardPersonalConfigurationChange())
+    return;
   m_preferencesTarget = target;
   auto report = [this, target](const QString &message) {
-    if (target == PreferencesTarget::Advanced) m_personalUi->advancedPage()->setStatusMessage(message);
-    else if (target == PreferencesTarget::Keyboard) personalShortcutPage()->setStatusMessage(message);
-    else if (target == PreferencesTarget::Connection) m_personalUi->setConnectionFeedback(message);
-    else m_personalUi->setPreferencesStatus(message);
+    if (target == PreferencesTarget::Advanced)
+      m_personalUi->advancedPage()->setStatusMessage(message);
+    else if (target == PreferencesTarget::Keyboard)
+      personalShortcutPage()->setStatusMessage(message);
+    else if (target == PreferencesTarget::Connection)
+      m_personalUi->setConnectionFeedback(message);
+    else
+      m_personalUi->setPreferencesStatus(message);
   };
   QString error;
   auto ordinary = changes;
   if (target == PreferencesTarget::Connection) {
     ordinary.remove(Settings::Client::RemoteHost);
     ordinary.remove(Settings::Core::CoreMode);
+    ordinary.remove(Settings::Core::ComputerName);
     ordinary.remove(Settings::Client::ShortcutConfig);
-    const auto mode = changes.value(Settings::Core::CoreMode, Settings::value(Settings::Core::CoreMode)).value<CoreMode>();
-    if ((mode != CoreMode::Client && mode != CoreMode::Server) ||
-        (mode == CoreMode::Client && changes.value(Settings::Client::RemoteHost, Settings::value(Settings::Client::RemoteHost)).toString().trimmed().isEmpty()) ||
-        (changes.contains(Settings::Client::ShortcutConfig) && !deskflow::shortcuts::fromJson(changes.value(Settings::Client::ShortcutConfig).toString(), &error))) {
+    const auto mode =
+        changes.value(Settings::Core::CoreMode, Settings::value(Settings::Core::CoreMode)).value<CoreMode>();
+    const auto name =
+        changes.value(Settings::Core::ComputerName, Settings::value(Settings::Core::ComputerName)).toString();
+    validators::ComputerNameValidator nameValidator({});
+    bool duplicateName = false;
+    for (const auto &computer : std::as_const(m_serverConfig).computers())
+      duplicateName |= !computer.isNull() &&
+                       ((!computer.isServer() && computer.name().compare(name, Qt::CaseInsensitive) == 0) ||
+                        computer.aliases().contains(name, Qt::CaseInsensitive));
+    if ((mode != CoreMode::Client && mode != CoreMode::Server) || name.isEmpty() || !nameValidator.validate(name) ||
+        !name.front().isLetterOrNumber() || !name.back().isLetterOrNumber() || duplicateName ||
+        (mode == CoreMode::Client &&
+         changes.value(Settings::Client::RemoteHost, Settings::value(Settings::Client::RemoteHost))
+             .toString()
+             .trimmed()
+             .isEmpty()) ||
+        (changes.contains(Settings::Client::ShortcutConfig) &&
+         !deskflow::shortcuts::fromJson(changes.value(Settings::Client::ShortcutConfig).toString(), &error))) {
       report(error.isEmpty() ? tr("连接角色或来源地址无效。") : error);
       return;
     }
@@ -985,39 +1048,67 @@ void MainWindow::applyPersonalPreferences(const QVariantMap &changes, Preference
     report(tr("本机证书无效，请先在“证书维护”中明确生成证书，再启用加密。"));
     return;
   }
-  const bool forceReconnect = target == PreferencesTarget::Connection &&
-      (changes.contains(Settings::Client::RemoteHost) || changes.contains(Settings::Core::CoreMode));
-  findChild<personal::PreferencesApplyController *>()->apply(changes, forceReconnect);
+  const bool forceReconnect =
+      target == PreferencesTarget::Connection &&
+      (changes.contains(Settings::Client::RemoteHost) || changes.contains(Settings::Core::CoreMode) ||
+       changes.contains(Settings::Core::ComputerName));
+  const auto candidate =
+      target == PreferencesTarget::Connection ? personal::expandedConnectionIdentityChanges(changes) : changes;
+  findChild<personal::PreferencesApplyController *>()->apply(candidate, forceReconnect);
 }
 
 void MainWindow::openKeyboardCompatibility()
 {
-  if (guardPersonalConfigurationChange()) return;
+  if (guardPersonalConfigurationChange())
+    return;
   QDialog dialog(this);
-  dialog.setWindowModality(Qt::WindowModal);
+  personal::prepareDialog(&dialog, 560, 340);
   dialog.setWindowTitle(tr("远程键盘布局兼容"));
-  dialog.setMinimumWidth(420);
-  auto *layout = new QVBoxLayout(&dialog);
-  auto *sync = new QCheckBox(tr("同步来源电脑的键盘布局"), &dialog);
+  dialog.setMinimumWidth(440);
+  auto *root = new QVBoxLayout(&dialog);
+  root->setContentsMargins(0, 0, 0, 0);
+  root->setSpacing(0);
+  root->addWidget(personal::dialogHeading(tr("键盘布局兼容"), tr("兼容来源端的键盘布局标识。"), &dialog));
+  auto *body = new QWidget(&dialog);
+  auto *layout = new QVBoxLayout(body);
+  layout->setContentsMargins(24, 0, 24, 22);
+  layout->setSpacing(16);
+  auto *sync = new QCheckBox(tr("同步来源电脑的键盘布局"), body);
   sync->setObjectName(QStringLiteral("keyboardLayoutSync"));
   sync->setChecked(Settings::value(Settings::Client::LanguageSync).toBool());
   sync->setEnabled(Settings::isWritable());
   layout->addWidget(sync);
-  auto *note = new QLabel(tr("用于兼容来源端的键盘布局标识，与界面语言、轻按 Shift 切换中英文相互独立。部分旧版来源端或本机未安装的布局可能无法同步。更改后将短暂重新连接。"), &dialog);
+  auto *note = new QLabel(
+      tr("此项与轻按 Shift "
+         "切换中英文独立。来源端版本较旧，或本机未安装对应布局时，可能无法同步。更改后共享会短暂重新连接。"),
+      body
+  );
+  note->setProperty("secondaryText", true);
   note->setWordWrap(true);
   layout->addWidget(note);
-  auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, &dialog);
+  layout->addStretch();
+  root->addWidget(body, 1);
+  auto *footer = new QWidget(&dialog);
+  footer->setProperty("personalFooter", true);
+  auto *footerLayout = new QHBoxLayout(footer);
+  footerLayout->setContentsMargins(24, 14, 24, 16);
+  auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, footer);
+  buttons->button(QDialogButtonBox::Save)->setText(tr("保存更改"));
+  buttons->button(QDialogButtonBox::Save)->setProperty("primaryButton", true);
   buttons->button(QDialogButtonBox::Save)->setEnabled(Settings::isWritable());
+  buttons->button(QDialogButtonBox::Cancel)->setText(tr("取消"));
+  footerLayout->addWidget(buttons);
+  root->addWidget(footer);
   connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
   connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-  layout->addWidget(buttons);
   if (dialog.exec() == QDialog::Accepted)
     applyPersonalPreferences({{Settings::Client::LanguageSync, sync->isChecked()}}, PreferencesTarget::Keyboard);
 }
 
 void MainWindow::regeneratePersonalCertificate(const QString &path, int bits)
 {
-  if (guardPersonalConfigurationChange()) return;
+  if (guardPersonalConfigurationChange())
+    return;
   auto *page = m_personalUi->advancedPage();
   if (!Settings::isWritable() || page->isDirty()) {
     page->setStatusMessage(tr("请先应用或还原高级设置草稿，再维护证书。"));
@@ -1034,34 +1125,50 @@ void MainWindow::regeneratePersonalCertificate(const QString &path, int bits)
   m_certificateMaintenance = maintenance;
   m_preferencesTarget = PreferencesTarget::Advanced;
   findChild<personal::PreferencesApplyController *>()->apply(
-      {{Settings::Security::Certificate, path}, {Settings::Security::KeySize, bits}}, true, false);
+      {{Settings::Security::Certificate, path}, {Settings::Security::KeySize, bits}}, true, false
+  );
 }
 
 bool MainWindow::writePersonalPreferences(const QVariantMap &changes, QString *error)
 {
   if (!m_certificateMaintenance) {
-    if (m_preferencesTarget == PreferencesTarget::Connection) return Settings::trySetValues(changes, error);
+    if (m_preferencesTarget == PreferencesTarget::Connection) {
+      const bool saved = Settings::trySetValues(changes, error);
+      if (saved && changes.contains(Settings::Core::ComputerName))
+        m_serverConfig = ServerConfig();
+      return saved;
+    }
     return personal::commitPreferenceChanges(changes, error);
   }
   auto &maintenance = *m_certificateMaintenance;
-  auto fail = [error](const QString &message) { if (error) *error = message; return false; };
+  auto fail = [error](const QString &message) {
+    if (error)
+      *error = message;
+    return false;
+  };
   QFileInfo info(maintenance.path);
-  if (info.isSymLink() || info.isDir()) return fail(tr("证书目标已更改，操作已取消。"));
+  if (info.isSymLink() || info.isDir())
+    return fail(tr("证书目标已更改，操作已取消。"));
   maintenance.existed = info.exists();
   if (maintenance.existed) {
     QFile previous(maintenance.path);
-    if (!previous.open(QIODevice::ReadOnly)) return fail(tr("无法备份原证书，原证书已保留。"));
+    if (!previous.open(QIODevice::ReadOnly))
+      return fail(tr("无法备份原证书，原证书已保留。"));
     maintenance.previous = previous.readAll();
-    QTemporaryFile backup(QFileInfo(maintenance.path).absolutePath() + QStringLiteral("/deskbridge-certificate-backup-XXXXXX.pem"));
+    QTemporaryFile backup(
+        QFileInfo(maintenance.path).absolutePath() + QStringLiteral("/deskbridge-certificate-backup-XXXXXX.pem")
+    );
     if (!backup.open() || !backup.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner) ||
         backup.write(maintenance.previous) != maintenance.previous.size() || !backup.flush())
       return fail(tr("无法保留原证书备份，操作已取消。"));
     maintenance.backupPath = backup.fileName();
     backup.setAutoRemove(false);
   }
-  if (!QDir().mkpath(info.absolutePath())) return fail(tr("无法创建证书所在目录。"));
+  if (!QDir().mkpath(info.absolutePath()))
+    return fail(tr("无法创建证书所在目录。"));
   QTemporaryFile generated(info.absolutePath() + QStringLiteral("/.deskbridge-certificate-XXXXXX"));
-  if (!generated.open()) return fail(tr("无法创建临时证书文件。"));
+  if (!generated.open())
+    return fail(tr("无法创建临时证书文件。"));
   const auto temporaryPath = generated.fileName();
   generated.close();
   try {
@@ -1077,7 +1184,8 @@ bool MainWindow::writePersonalPreferences(const QVariantMap &changes, QString *e
       privateKey.length() != maintenance.bits)
     return fail(tr("新证书校验失败，原证书已保留。"));
   QSaveFile certificate(maintenance.path);
-  if (!certificate.open(QIODevice::WriteOnly)) return fail(tr("无法写入证书位置，原证书已保留。"));
+  if (!certificate.open(QIODevice::WriteOnly))
+    return fail(tr("无法写入证书位置，原证书已保留。"));
   if (!certificate.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner))
     return fail(tr("无法设置证书文件权限，原证书已保留。"));
   if (certificate.write(maintenance.generated) != maintenance.generated.size() || !certificate.commit())
@@ -1085,7 +1193,8 @@ bool MainWindow::writePersonalPreferences(const QVariantMap &changes, QString *e
   maintenance.written = true;
   if (!Settings::trySetValues(changes, error)) {
     QString restoreError;
-    if (!restoreCertificateFile(&restoreError) && error) *error += QStringLiteral(" ") + restoreError;
+    if (!restoreCertificateFile(&restoreError) && error)
+      *error += QStringLiteral(" ") + restoreError;
     return false;
   }
   return true;
@@ -1093,11 +1202,13 @@ bool MainWindow::writePersonalPreferences(const QVariantMap &changes, QString *e
 
 bool MainWindow::restoreCertificateFile(QString *error)
 {
-  if (!m_certificateMaintenance || !m_certificateMaintenance->written) return true;
+  if (!m_certificateMaintenance || !m_certificateMaintenance->written)
+    return true;
   auto &maintenance = *m_certificateMaintenance;
   QFile current(maintenance.path);
   if (!current.open(QIODevice::ReadOnly) || current.readAll() != maintenance.generated) {
-    if (error) *error = tr("证书文件已被其他程序修改，无法自动覆盖恢复。原证书备份：%1").arg(maintenance.backupPath);
+    if (error)
+      *error = tr("证书文件已被其他程序修改，无法自动覆盖恢复。原证书备份：%1").arg(maintenance.backupPath);
     return false;
   }
   current.close();
@@ -1106,11 +1217,13 @@ bool MainWindow::restoreCertificateFile(QString *error)
     if (!previous.open(QIODevice::WriteOnly) ||
         !previous.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner) ||
         previous.write(maintenance.previous) != maintenance.previous.size() || !previous.commit()) {
-      if (error) *error = tr("无法恢复原证书文件。");
+      if (error)
+        *error = tr("无法恢复原证书文件。");
       return false;
     }
   } else if (!QFile::remove(maintenance.path)) {
-    if (error) *error = tr("无法移除本次新建的证书文件。");
+    if (error)
+      *error = tr("无法移除本次新建的证书文件。");
     return false;
   }
   maintenance.written = false;
@@ -1119,13 +1232,18 @@ bool MainWindow::restoreCertificateFile(QString *error)
 
 bool MainWindow::restorePersonalPreferences(const QVariantMap &previous, QString *error)
 {
-  if (!restoreCertificateFile(error)) return false;
-  return Settings::trySetValues(previous, error);
+  if (!restoreCertificateFile(error))
+    return false;
+  const bool restored = Settings::trySetValues(previous, error);
+  if (restored && previous.contains(Settings::Core::ComputerName))
+    m_serverConfig = ServerConfig();
+  return restored;
 }
 
 void MainWindow::resetCore()
 {
-  if (guardPersonalConfigurationChange()) return;
+  if (guardPersonalConfigurationChange())
+    return;
   m_coreProcess.restart();
 }
 
@@ -1201,13 +1319,13 @@ void MainWindow::updateModeControlLabels()
   QIcon stopIcon;
 
   if (isServer) {
-    startText = tr("Start");
-    stopText = tr("Stop");
+    startText = tr("开始共享");
+    stopText = tr("停止共享");
     startIcon = QIcon::fromTheme(QStringLiteral("system-run"));
     stopIcon = QIcon::fromTheme(QIcon::ThemeIcon::ProcessStop);
   } else {
-    startText = tr("Connect");
-    stopText = tr("Disconnect");
+    startText = tr("连接来源电脑");
+    stopText = tr("断开连接");
     startIcon = QIcon::fromTheme(QStringLiteral("network-connect"));
     stopIcon = QIcon::fromTheme(QStringLiteral("network-disconnect"));
   }
@@ -1307,8 +1425,34 @@ void MainWindow::createMenuBar()
   m_menuFile->addAction(m_actionQuit);
 
   m_menuEdit->addAction(m_actionSettings);
+  m_menuEdit->addSeparator();
+  const auto editAction = [this](const QString &title, QKeySequence::StandardKey shortcut, const char *method) {
+    auto *action = m_menuEdit->addAction(title);
+    action->setShortcut(QKeySequence(shortcut));
+    connect(action, &QAction::triggered, this, [method] {
+      if (auto *focus = QApplication::focusWidget())
+        QMetaObject::invokeMethod(focus, method, Qt::DirectConnection);
+    });
+    connect(m_menuEdit, &QMenu::aboutToShow, action, [action, method] {
+      const auto *focus = QApplication::focusWidget();
+      const auto signature = QByteArray(method) + "()";
+      action->setEnabled(focus && focus->metaObject()->indexOfMethod(signature.constData()) >= 0);
+    });
+  };
+  editAction(tr("撤销"), QKeySequence::Undo, "undo");
+  editAction(tr("重做"), QKeySequence::Redo, "redo");
+  m_menuEdit->addSeparator();
+  editAction(tr("剪切"), QKeySequence::Cut, "cut");
+  editAction(tr("复制"), QKeySequence::Copy, "copy");
+  editAction(tr("粘贴"), QKeySequence::Paste, "paste");
+  editAction(tr("全选"), QKeySequence::SelectAll, "selectAll");
 
   m_menuView->addAction(m_logDock->toggleViewAction());
+  auto *minimize = m_menuView->addAction(tr("最小化"));
+  minimize->setShortcut(QKeySequence(QStringLiteral("Ctrl+M")));
+  connect(minimize, &QAction::triggered, this, &QWidget::showMinimized);
+  auto *showWindow = m_menuView->addAction(tr("显示桌桥"));
+  connect(showWindow, &QAction::triggered, this, &MainWindow::showAndActivate);
 
   m_menuHelp->addAction(m_actionAbout);
   m_menuHelp->addAction(m_actionShowHelp);
@@ -1333,7 +1477,10 @@ void MainWindow::setupTrayIcon()
     m_personalTrayMapping->setEnabled(false);
     m_personalTrayToggle = trayMenu->addAction(tr("连接来源电脑"));
     connect(m_personalTrayToggle, &QAction::triggered, this, [this] {
-      if (m_coreProcess.processState() == ProcessState::Stopped) startCore(); else stopCore();
+      if (m_coreProcess.processState() == ProcessState::Stopped)
+        startCore();
+      else
+        stopCore();
     });
     trayMenu->addSeparator();
     auto *open = trayMenu->addAction(tr("打开桌桥…"));
@@ -1390,8 +1537,10 @@ void MainWindow::applyConfig()
     m_serverStartSuggestedIP = ip;
   }
 
-  if (m_personalUi) updateModeControls();
-  else coreModeToggled(true);
+  if (m_personalUi)
+    updateModeControls();
+  else
+    coreModeToggled(true);
   refreshPersonalUi();
 }
 
@@ -1425,9 +1574,7 @@ void MainWindow::setTrayIcon()
   QString themeIcon = kAppIconName;
   if (!Settings::value(Settings::Gui::SymbolicTrayIcon).toBool()) {
     if (deskflow::platform::isMac())
-      m_trayIcon->setIcon(
-          QIcon::fromTheme(themeIcon, QIcon(fallbackPath.arg(kIconThemeId, iconMode(), themeIcon)))
-      );
+      m_trayIcon->setIcon(QIcon::fromTheme(themeIcon, QIcon(fallbackPath.arg(kIconThemeId, iconMode(), themeIcon))));
     else
       m_trayIcon->setIcon(QIcon(fallbackPath.arg(kIconThemeId, QStringLiteral("dark"), themeIcon)));
     return;
@@ -1498,11 +1645,8 @@ void MainWindow::handleConnectionRefused(deskflow::core::ConnectionRefusal reaso
 
   const auto address = Settings::value(Settings::Client::RemoteHost).toString();
   QMessageBox::warning(
-      this, tr("%1 Connection Error").arg(kAppName),
-      tr("<p>Failed to connect to the server '%1'.</p>"
-         "<p>A Client with your name is already connected to the server.</p>"
-         "Please ensure that you're using a unique name and that only a "
-         "single instance of the client process is running.</p>")
+      this, tr("设备名称已被使用"),
+      tr("无法连接来源电脑「%1」：已有同名设备在线。请在连接设置中更换本机设备名称，并确认只运行了一份桌桥。")
           .arg(address)
   );
 
@@ -1516,14 +1660,15 @@ void MainWindow::handleMissingKeyboardLayouts(const QString &layouts)
 
   QMessageBox msgBox(this);
   msgBox.setIcon(QMessageBox::Warning);
-  msgBox.setWindowTitle(tr("Missing Keyboard Layouts"));
-  msgBox.setText(tr("<p>Keyboard layout support requires matching layouts on all computers. "
-                    "The following layouts from the other computer are not installed on this computer:</p>"
-                    "<p><b>%1</b></p>"
-                    "<p>Please install them to enable support for these layouts.</p>")
-                     .arg(layouts));
+  msgBox.setProperty("personalDialog", true);
+  personal::applyPersonalStyle(&msgBox);
+  msgBox.setWindowModality(Qt::WindowModal);
+  msgBox.setWindowTitle(tr("缺少键盘布局"));
+  msgBox.setText(tr("<p>要同步来源电脑的键盘布局，本机需要安装对应布局。当前缺少：</p><p><b>%1</b></p>"
+                    "<p>安装后可重新连接，或在快捷键映射的兼容选项中关闭布局同步。</p>")
+                     .arg(layouts.toHtmlEscaped()));
 
-  auto *checkBox = new QCheckBox(tr("Don't show this again"), &msgBox);
+  auto *checkBox = new QCheckBox(tr("不再提示缺少布局"), &msgBox);
   msgBox.setCheckBox(checkBox);
   msgBox.exec();
 
@@ -1607,13 +1752,15 @@ void MainWindow::closeEvent(QCloseEvent *event)
       m_personalUi->showPage(personal::PersonalWindow::Connection);
       return;
     }
-    if (auto *preferences = findChild<personal::PreferencesApplyController *>(); preferences && preferences->isApplying()) {
+    if (auto *preferences = findChild<personal::PreferencesApplyController *>();
+        preferences && preferences->isApplying()) {
       event->ignore();
       guardPersonalConfigurationChange();
       return;
     }
     auto *page = personalShortcutPage();
-    if (auto *transaction = findChild<personal::ShortcutApplyController *>(); transaction && transaction->isApplying()) {
+    if (auto *transaction = findChild<personal::ShortcutApplyController *>();
+        transaction && transaction->isApplying()) {
       event->ignore();
       showAndActivate();
       m_personalUi->showPage(personal::PersonalWindow::Shortcuts);
@@ -1625,8 +1772,7 @@ void MainWindow::closeEvent(QCloseEvent *event)
     const bool advancedDirty = m_personalUi->advancedPage()->hasPendingEdits();
     if (shortcutsDirty || preferencesDirty || advancedDirty) {
       const QString message = tr("退出会丢失未应用的设置或快捷键草稿。已应用的配置将保留。");
-      QMessageBox confirmation(QMessageBox::Warning, tr("未应用的更改"),
-                               message, QMessageBox::NoButton, this);
+      QMessageBox confirmation(QMessageBox::Warning, tr("未应用的更改"), message, QMessageBox::NoButton, this);
       auto *keepEditing = confirmation.addButton(tr("继续编辑"), QMessageBox::RejectRole);
       auto *discard = confirmation.addButton(tr("放弃更改并退出"), QMessageBox::DestructiveRole);
       confirmation.setDefaultButton(keepEditing);
@@ -1635,8 +1781,11 @@ void MainWindow::closeEvent(QCloseEvent *event)
       if (confirmation.clickedButton() != discard) {
         event->ignore();
         showAndActivate();
-        m_personalUi->showPage(shortcutsDirty ? personal::PersonalWindow::Shortcuts
-                              : advancedDirty ? personal::PersonalWindow::Advanced : personal::PersonalWindow::General);
+        m_personalUi->showPage(
+            shortcutsDirty  ? personal::PersonalWindow::Shortcuts
+            : advancedDirty ? personal::PersonalWindow::Advanced
+                            : personal::PersonalWindow::General
+        );
         return;
       }
     }
@@ -1644,7 +1793,8 @@ void MainWindow::closeEvent(QCloseEvent *event)
 
   if (m_saveOnExit) {
     Settings::setValue(Settings::Gui::WindowGeometry, geometry());
-    if (!m_personalUi) Settings::setValue(Settings::Gui::AutoStartCore, m_coreProcess.isStarted());
+    if (!m_personalUi)
+      Settings::setValue(Settings::Gui::AutoStartCore, m_coreProcess.isStarted());
   }
   qDebug() << "quitting application";
 
@@ -1684,7 +1834,8 @@ void MainWindow::coreProcessStateChanged(ProcessState state)
   updateStatus();
   if (state == Started) {
     qDebug() << "recording that core has started";
-    if (!m_personalUi) Settings::setValue(Settings::Gui::AutoStartCore, true);
+    if (!m_personalUi)
+      Settings::setValue(Settings::Gui::AutoStartCore, true);
     if (m_coreProcess.mode() == CoreMode::Server &&
         !Settings::value(Settings::Gui::ShownServerFirstStartMessage).toBool()) {
       qDebug() << "starting core server for first time";
@@ -1758,7 +1909,6 @@ void MainWindow::changeEvent(QEvent *e)
     setWindowIcon(appIcon());
     setTrayIcon();
   } else if (e->type() == QEvent::LanguageChange) {
-    ui->retranslateUi(this);
     updateModeControlLabels();
     updateNetworkInfo();
     updateStatus();
@@ -1783,51 +1933,32 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event)
 
 void MainWindow::updateText()
 {
-  m_menuFile->setTitle(tr("&File"));
-  m_menuEdit->setTitle(tr("&Edit"));
-  m_menuView->setTitle(tr("&View"));
-  m_menuHelp->setTitle(tr("&Help"));
-
-  m_actionMinimize->setText(tr("&Minimize to tray"));
-  m_actionQuit->setText(tr("&Quit"));
-  m_actionTrayQuit->setText(tr("&Quit"));
-  //: %1 will be the replaced with the appname
-  m_actionRestore->setText(tr("&Open %1").arg(kAppName));
-  m_actionSettings->setText(tr("&Preferences"));
-  m_actionStartCore->setText(tr("&Start"));
-  m_actionRestartCore->setText(tr("Rest&art"));
-  m_actionStopCore->setText(tr("S&top"));
-  //: %1 will be the replaced with the appname
-  m_actionAbout->setText(tr("About %1...").arg(kAppName));
-
-  m_actionShowHelp->setText(tr("View &Help"));
-
-  //: start / restart core shortcut
-  m_actionStartCore->setShortcut(QKeySequence(tr("Ctrl+S")));
-  m_actionRestartCore->setShortcut(QKeySequence(tr("Ctrl+S")));
-
-  //: stop core shortcut
-  m_actionStopCore->setShortcut(QKeySequence(tr("Ctrl+T")));
-
+  m_menuFile->setTitle(tr("连接"));
+  m_menuEdit->setTitle(tr("编辑"));
+  m_menuView->setTitle(tr("窗口"));
+  m_menuHelp->setTitle(tr("帮助"));
+  m_actionMinimize->setText(tr("隐藏桌桥"));
+  m_actionQuit->setText(tr("退出桌桥"));
+  m_actionTrayQuit->setText(tr("退出桌桥"));
+  m_actionRestore->setText(tr("显示桌桥"));
+  m_actionSettings->setText(tr("设置…"));
+  m_actionRestartCore->setText(tr("重新启动共享"));
+  m_actionAbout->setText(tr("关于桌桥…"));
+  m_actionShowHelp->setText(tr("桌桥使用帮助"));
+  m_actionStartCore->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+S")));
+  m_actionRestartCore->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+R")));
+  m_actionStopCore->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+D")));
   if (deskflow::platform::isWindows()) {
-    //: Quit shortcut
-    m_actionQuit->setShortcut(QKeySequence(tr("Ctrl+Q")));
-    m_actionTrayQuit->setShortcut(QKeySequence(tr("Ctrl+Q")));
+    m_actionQuit->setShortcut(QKeySequence::Quit);
+    m_actionTrayQuit->setShortcut(QKeySequence::Quit);
   }
-  if (m_personalUi) {
-    m_menuFile->setTitle(tr("连接"));
-    m_menuEdit->setTitle(tr("编辑"));
-    m_menuView->setTitle(tr("窗口"));
-    m_menuHelp->setTitle(tr("帮助"));
-    m_actionSettings->setText(tr("设置…"));
-    m_actionTrayQuit->setText(tr("退出桌桥"));
-    m_actionQuit->setText(tr("退出桌桥"));
-  }
+  updateModeControlLabels();
 }
 
 void MainWindow::showConfigureServer(const QString &message)
 {
-  if (guardPersonalConfigurationChange()) return;
+  if (guardPersonalConfigurationChange())
+    return;
   m_serverConfigDialogVisible = true;
   ServerConfigDialog dialog(this, serverConfig());
   dialog.message(message);
@@ -1840,15 +1971,8 @@ void MainWindow::showConfigureServer(const QString &message)
 
 void MainWindow::showConfigureClient()
 {
-  if (m_personalUi) {
-    showAndActivate();
-    m_personalUi->showPage(personal::PersonalWindow::General);
-    return;
-  }
-  ClientConfigDialog dialog(this);
-  if ((dialog.exec() == QDialog::Accepted) && m_coreProcess.isStarted()) {
-    m_coreProcess.restart();
-  }
+  showAndActivate();
+  m_personalUi->showPage(personal::PersonalWindow::General);
 }
 
 void MainWindow::secureSocket(bool secureSocket)
@@ -2065,12 +2189,8 @@ void MainWindow::setHelpFilePath()
 
 void MainWindow::showHelpViewer() const
 {
-  if (m_helpPath.isLocalFile()) {
-    HelpDialog dialogHelp(this->centralWidget(), m_helpPath);
-    dialogHelp.exec();
-  } else {
-    QDesktopServices::openUrl(m_helpPath);
-  }
+  HelpDialog dialogHelp(centralWidget(), m_helpPath);
+  dialogHelp.exec();
 }
 
 bool MainWindow::canRunCore() const

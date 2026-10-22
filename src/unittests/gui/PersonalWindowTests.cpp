@@ -14,13 +14,15 @@
 #include <QtTest>
 #include <memory>
 
-using deskflow::gui::personal::PersonalWindow;
 using deskflow::gui::personal::LoginStartup;
+using deskflow::gui::personal::PersonalWindow;
 
 namespace {
 struct FakeStartupState
 {
-  explicit FakeStartupState(LoginStartup::Status initial) : status(std::move(initial)) {}
+  explicit FakeStartupState(LoginStartup::Status initial) : status(std::move(initial))
+  {
+  }
   QMutex mutex;
   LoginStartup::Status status;
   bool failChange = false;
@@ -34,7 +36,10 @@ class FakeStartup
 {
 public:
   explicit FakeStartup(LoginStartup::Status initial = {true, false, false, {}, {}})
-      : state(std::make_shared<FakeStartupState>(std::move(initial))), service(operations(state)) {}
+      : state(std::make_shared<FakeStartupState>(std::move(initial))),
+        service(operations(state))
+  {
+  }
 
   void setExternalStatus(LoginStartup::Status status)
   {
@@ -51,9 +56,21 @@ public:
     QMutexLocker lock(&state->mutex);
     state->requireApproval = true;
   }
-  int reads() const { QMutexLocker lock(&state->mutex); return state->reads; }
-  int changes() const { QMutexLocker lock(&state->mutex); return state->changes; }
-  int opened() const { QMutexLocker lock(&state->mutex); return state->opened; }
+  int reads() const
+  {
+    QMutexLocker lock(&state->mutex);
+    return state->reads;
+  }
+  int changes() const
+  {
+    QMutexLocker lock(&state->mutex);
+    return state->changes;
+  }
+  int opened() const
+  {
+    QMutexLocker lock(&state->mutex);
+    return state->opened;
+  }
 
   std::shared_ptr<FakeStartupState> state;
   LoginStartup service;
@@ -76,7 +93,10 @@ private:
           state->status.approvalRequired = enabled && state->requireApproval;
           return {true, state->status, {}};
         },
-        [state] { QMutexLocker lock(&state->mutex); ++state->opened; }
+        [state] {
+          QMutexLocker lock(&state->mutex);
+          ++state->opened;
+        }
     };
   }
 };
@@ -115,14 +135,16 @@ private Q_SLOTS:
     QVERIFY(pages);
     QList<QPushButton *> navigation;
     for (auto *button : window.findChildren<QPushButton *>())
-      if (button->property("personalNav").toBool()) navigation.append(button);
+      if (button->property("personalNav").toBool())
+        navigation.append(button);
     QCOMPARE(navigation.size(), 4);
     for (int page : {1, 2, 3, 0}) {
       // macOS AX changes a checkable button's state without emitting clicked.
       navigation[page]->setChecked(true);
       QCOMPARE(pages->currentIndex(), page);
       int selected = 0;
-      for (auto *button : navigation) selected += button->isChecked();
+      for (auto *button : navigation)
+        selected += button->isChecked();
       QCOMPARE(selected, 1);
     }
   }
@@ -133,14 +155,17 @@ private Q_SLOTS:
     PersonalWindow window(nullptr, &startup.service);
     QCheckBox *autoConnect = nullptr;
     for (auto *box : window.findChildren<QCheckBox *>())
-      if (box->text().contains(QStringLiteral("打开桌桥"))) autoConnect = box;
+      if (box->text().contains(QStringLiteral("打开桌桥")))
+        autoConnect = box;
     QVERIFY(autoConnect);
     QVERIFY(autoConnect->isChecked());
     autoConnect->setChecked(false);
     QVERIFY(window.hasPendingPreferences());
     window.showPage(PersonalWindow::Connection);
-    window.setConnectionStatus(deskflow::core::ConnectionState::Connected, deskflow::core::ProcessState::Started,
-                               true, true, true, "192.0.2.1", "test-mac");
+    window.setConnectionStatus(
+        deskflow::core::ConnectionState::Connected, deskflow::core::ProcessState::Started, true, true, true,
+        "192.0.2.1", "test-mac"
+    );
     window.reloadPreferences();
     window.showPage(PersonalWindow::General);
     QVERIFY(!autoConnect->isChecked());
@@ -189,20 +214,36 @@ private Q_SLOTS:
     QVERIFY(!subtitle->wordWrap());
   }
 
-  void mappingOverviewCanDescribeFullAdaptationWithoutExactRules()
+  void connectionPageKeepsDeviceManagementSeparateFromConnectionSettings()
   {
     FakeStartup startup;
     PersonalWindow window(nullptr, &startup.service);
-    auto *detail = window.findChild<QLabel *>(QStringLiteral("personalMappingDetail"));
-    QVERIFY(detail);
-    const auto status = QStringLiteral("完整快捷键适配 · 全部应用 · Ctrl+空格保留");
-    window.setMappingStatus(true, 0, status);
-    QCOMPARE(detail->text(), status);
-    window.setMappingStatus(false, 0, status);
-    QVERIFY(detail->text().contains(QStringLiteral("已关闭")));
-    window.setDeviceContext(deskflow::shortcuts::DeviceOS::Windows, true);
-    window.setMappingStatus(true, 0, status);
-    QVERIFY(detail->text().contains(QStringLiteral("本机物理按键不转换")));
+    auto *manage = window.findChild<QPushButton *>(QStringLiteral("manageDevicesButton"));
+    auto *settings = window.findChild<QPushButton *>(QStringLiteral("connectionSettingsButton"));
+    QVERIFY(manage && settings);
+    QVERIFY(!manage->isHidden());
+    QVERIFY(manage->isEnabled());
+    QSignalSpy options(&window, &PersonalWindow::connectionOptionsRequested);
+    QSignalSpy devices(&window, &PersonalWindow::deviceManagementRequested);
+    settings->click();
+    QCOMPARE(options.count(), 1);
+    QCOMPARE(devices.count(), 0);
+    manage->click();
+    QCOMPARE(devices.count(), 1);
+    window.setDeviceContext(deskflow::shortcuts::DeviceOS::MacOS, true);
+    QVERIFY(!manage->isHidden());
+    manage->click();
+    QCOMPARE(devices.count(), 2);
+    window.setDeviceContext(deskflow::shortcuts::DeviceOS::Linux, false);
+    QVERIFY(!manage->isHidden());
+    QVERIFY(manage->isEnabled());
+    QVERIFY(manage->toolTip().contains(QStringLiteral("来源端")));
+    window.setConfigurationBusy(true);
+    QVERIFY(!manage->isEnabled());
+    QVERIFY(!settings->isEnabled());
+    window.setConfigurationBusy(false);
+    QVERIFY(manage->isEnabled());
+    QVERIFY(!window.findChild<QLabel *>(QStringLiteral("personalMappingDetail")));
   }
 
   void loginStartupShowsAnExistingEnabledItemWithoutTakingOwnership()
@@ -331,8 +372,10 @@ private Q_SLOTS:
     QVERIFY(toggle && autoConnect);
     autoConnect->setChecked(false);
     const int reads = startup.reads();
-    window.setConnectionStatus(deskflow::core::ConnectionState::Connected, deskflow::core::ProcessState::Started,
-                               true, true, true, "192.0.2.1", "test-client");
+    window.setConnectionStatus(
+        deskflow::core::ConnectionState::Connected, deskflow::core::ProcessState::Started, true, true, true,
+        "192.0.2.1", "test-client"
+    );
     window.reloadPreferences();
     QCOMPARE(startup.reads(), reads);
     startup.setExternalStatus({true, true, false, {}, {}});
@@ -354,7 +397,9 @@ private Q_SLOTS:
 
   void loginStartupReadErrorDoesNotClaimOffAndRecoversAfterRefresh()
   {
-    FakeStartup startup({true, false, false, QStringLiteral("已关闭（旧缓存）"), QStringLiteral("模拟系统状态读取失败")});
+    FakeStartup startup(
+        {true, false, false, QStringLiteral("已关闭（旧缓存）"), QStringLiteral("模拟系统状态读取失败")}
+    );
     PersonalWindow window(nullptr, &startup.service);
     auto *toggle = window.findChild<QCheckBox *>(QStringLiteral("loginStartupSwitch"));
     auto *hint = window.findChild<QLabel *>(QStringLiteral("loginStartupHint"));

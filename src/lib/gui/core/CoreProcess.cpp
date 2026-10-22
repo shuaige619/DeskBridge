@@ -385,7 +385,7 @@ void CoreProcess::handleLogLines(const QString &text)
     }
 
     const auto sourceMarker = QStringLiteral("DeskBridge source OS: ");
-    if (const auto position = line.indexOf(sourceMarker); position >= 0) {
+    if (const auto position = line.indexOf(sourceMarker); position >= 0 && !m_sourceOperatingSystemFromIpc) {
       const auto name = line.mid(position + sourceMarker.size()).trimmed();
       auto os = shortcuts::DeviceOS::Unknown;
       for (const auto candidate : {shortcuts::DeviceOS::MacOS, shortcuts::DeviceOS::Windows, shortcuts::DeviceOS::Linux}) {
@@ -395,7 +395,7 @@ void CoreProcess::handleLogLines(const QString &text)
       setSourceOperatingSystem(os);
     }
     const auto mappingMarker = QStringLiteral("DeskBridge modifier remap: ");
-    if (const auto position = line.indexOf(mappingMarker); position >= 0) {
+    if (const auto position = line.indexOf(mappingMarker); position >= 0 && !m_serverModifierMappingFromIpc) {
       const auto value = line.mid(position + mappingMarker.size()).trimmed();
       if (value == QStringLiteral("active") || value == QStringLiteral("none"))
         setServerModifierMapping(value == QStringLiteral("active"));
@@ -483,6 +483,8 @@ void CoreProcess::start(std::optional<ProcessMode> processModeOption)
   qInfo().noquote() << QString("starting %1 process (%2 mode)").arg(coreMode, processModeToString(processMode));
 
   setProcessState(ProcessState::Starting);
+  m_sourceOperatingSystemFromIpc = false;
+  m_serverModifierMappingFromIpc = false;
 
 #ifdef Q_OS_MACOS
   requestOSXNotificationPermission();
@@ -555,12 +557,17 @@ void CoreProcess::start(std::optional<ProcessMode> processModeOption)
 
           // queued so a modal dialog opened by a handler can't block readyRead and strand later messages
           connect(
-              m_coreIpcClient, &ipc::CoreIpcClient::commandReceived, this, &CoreProcess::onCoreIpcMessageReceived,
+              m_coreIpcClient, &ipc::CoreIpcClient::commandReceived, this,
+              [this, client = m_coreIpcClient](const QString &command, const QString &args) {
+                if (m_coreIpcClient == client)
+                  onCoreIpcMessageReceived(command, args);
+              },
               Qt::QueuedConnection
           );
           connect(m_coreIpcClient, &ipc::CoreIpcClient::connected, this, [this] {
             qDebug("connected to core ipc server");
             applyLogLevel();
+            m_coreIpcClient->requestDeviceContext();
             refreshScreenLayout();
           });
           connect(m_coreIpcClient, &ipc::CoreIpcClient::connectionFailed, this, &CoreProcess::onCoreIpcConnectionFailed);
@@ -842,7 +849,23 @@ void CoreProcess::onCoreIpcMessageReceived(const QString &command, const QString
     }
     return;
   }
-  if (command == "connectionState") {
+  if (command == "sourceOperatingSystem") {
+    for (const auto os : {shortcuts::DeviceOS::Unknown, shortcuts::DeviceOS::MacOS,
+                          shortcuts::DeviceOS::Windows, shortcuts::DeviceOS::Linux}) {
+      if (args == shortcuts::deviceOSName(os)) {
+        // Logs and IPC arrive through different channels. Once IPC supplies
+        // metadata, its connection-state ordering takes precedence over logs.
+        m_sourceOperatingSystemFromIpc = true;
+        setSourceOperatingSystem(os);
+        return;
+      }
+    }
+  } else if (command == "serverModifierMapping") {
+    if (args == QStringLiteral("active") || args == QStringLiteral("none")) {
+      m_serverModifierMappingFromIpc = true;
+      setServerModifierMapping(args == QStringLiteral("active"));
+    }
+  } else if (command == "connectionState") {
     const auto metaEnum = QMetaEnum::fromType<ConnectionState>();
     bool ok = false;
     const auto state = static_cast<ConnectionState>(metaEnum.keyToValue(args.toUtf8().constData(), &ok));

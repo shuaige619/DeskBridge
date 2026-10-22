@@ -40,7 +40,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Fallback for when git can not be found
-option(DESKBRIDGE_PERSONAL_BUILD "Build the independent personal DeskBridge app" ${CMAKE_HOST_APPLE})
+option(DESKBRIDGE_PERSONAL_BUILD "Build the independent DeskBridge app" ON)
 set(DESKFLOW_VERSION_MAJOR 1)
 set(DESKFLOW_VERSION_MINOR 27)
 set(DESKFLOW_VERSION_PATCH 0)

@@ -75,6 +75,7 @@ protected:
   void mousePressEvent(QMouseEvent *) override;
   void keyPressEvent(QKeyEvent *) override;
   bool event(QEvent *event) override;
+  bool eventFilter(QObject *watched, QEvent *event) override;
   void appendToSequence(int key);
   void updateOutput();
   void startRecording();
@@ -89,6 +90,7 @@ private:
   void setStatus(Status s)
   {
     m_Status = s;
+    setProperty("recording", s == Recording);
   }
   Status status() const
   {
@@ -99,8 +101,8 @@ private:
   KeySequence m_KeySequence;
   KeySequence m_BackupSequence;
   Status m_Status = Status::Stopped;
-  QString m_MousePrefix = QStringLiteral("mousebutton(");
-  QString m_MousePostfix = QStringLiteral(")");
-  QString m_KeyPrefix = QStringLiteral("keystroke(");
-  QString m_KeyPostfix = QStringLiteral(")");
+  QString m_MousePrefix = QStringLiteral("鼠标 · ");
+  QString m_MousePostfix;
+  QString m_KeyPrefix;
+  QString m_KeyPostfix;
 };

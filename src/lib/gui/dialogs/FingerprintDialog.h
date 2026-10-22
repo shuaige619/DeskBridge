@@ -12,7 +12,7 @@
 #include <QDialogButtonBox>
 
 class QLabel;
-class FingerprintPreview;
+class QStackedWidget;
 
 enum class FingerprintDialogMode
 {
@@ -41,7 +41,7 @@ private:
   void updateModeButton(bool hashMode) const;
   QLabel *m_lblHeader = nullptr;
   QLabel *m_lblFooter = nullptr;
-  FingerprintPreview *m_localPreview = nullptr;
-  FingerprintPreview *m_remotePreview = nullptr;
+  QStackedWidget *m_localPreview = nullptr;
+  QStackedWidget *m_remotePreview = nullptr;
   QDialogButtonBox *m_buttonBox = nullptr;
 };

@@ -97,3 +97,53 @@ create_test(
   SOURCE DeviceIllustrationTests.cpp
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
 )
+
+create_test(
+  NAME ConnectionOptionsDialogTests
+  DEPENDS gui
+  SOURCE ConnectionOptionsDialogTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+
+create_test(
+  NAME EditorDialogTests
+  DEPENDS gui
+  SOURCE EditorDialogTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+
+create_test(
+  NAME ServerSettingsDialogTests
+  DEPENDS gui
+  SOURCE ServerSettingsDialogTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+
+target_sources(ConnectionOptionsDialogTests PRIVATE ../../apps/res/deskbridge.qrc ../../apps/res/deskflow.qrc)
+
+target_sources(EditorDialogTests PRIVATE ../../apps/res/deskbridge.qrc ../../apps/res/deskflow.qrc)
+
+target_sources(ServerSettingsDialogTests PRIVATE ../../apps/res/deskbridge.qrc ../../apps/res/deskflow.qrc)
+
+create_test(
+  NAME SupportDialogTests
+  DEPENDS gui
+  SOURCE SupportDialogTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+target_sources(SupportDialogTests PRIVATE ../../apps/res/deskbridge.qrc ../../apps/res/deskflow.qrc)
+
+create_test(
+  NAME ConnectionIdentityTests
+  DEPENDS gui
+  SOURCE ConnectionIdentityTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+
+create_test(
+  NAME ReceiverDeviceControlDialogTests
+  DEPENDS gui
+  SOURCE ReceiverDeviceControlDialogTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+target_sources(ReceiverDeviceControlDialogTests PRIVATE ../../apps/res/deskbridge.qrc ../../apps/res/deskflow.qrc)

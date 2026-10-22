@@ -59,8 +59,28 @@ void CoreIpcServer::setScreenLayout(const deskflow::layout::Snapshot &snapshot)
   broadcastCommand(QStringLiteral("screenLayout"), deskflow::layout::encodeIpc(deskflow::layout::toJson(snapshot)));
 }
 
+void CoreIpcServer::setSourceOperatingSystem(deskflow::shortcuts::DeviceOS os)
+{
+  m_sourceOperatingSystem = os;
+  broadcastCommand(QStringLiteral("sourceOperatingSystem"), deskflow::shortcuts::deviceOSName(os));
+}
+
+void CoreIpcServer::setServerModifierMapping(bool active)
+{
+  m_serverModifierMapping = active;
+  broadcastCommand(QStringLiteral("serverModifierMapping"), active ? QStringLiteral("active") : QStringLiteral("none"));
+}
+
 void CoreIpcServer::processCommand(QLocalSocket *clientSocket, const QString &command, const QStringList &parts)
 {
+  if (command == QStringLiteral("deviceContextQuery")) {
+    if (parts.size() != 1) return;
+    writeToClientSocket(clientSocket, QStringLiteral("sourceOperatingSystem=%1")
+                                          .arg(deskflow::shortcuts::deviceOSName(m_sourceOperatingSystem)));
+    writeToClientSocket(clientSocket, QStringLiteral("serverModifierMapping=%1")
+                                          .arg(m_serverModifierMapping ? QStringLiteral("active") : QStringLiteral("none")));
+    return;
+  }
   if (command == QStringLiteral("logLevel")) {
     if (parts.size() != 2 || !LogLevel::logLevelOptions().contains(parts.at(1), Qt::CaseInsensitive)) return;
     CLOG->setFilter(parts.at(1).toUpper());

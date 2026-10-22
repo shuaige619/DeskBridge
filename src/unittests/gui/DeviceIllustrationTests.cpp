@@ -1,22 +1,22 @@
 /* SPDX-License-Identifier: GPL-2.0-only WITH LicenseRef-OpenSSL-Exception */
+#include "common/Settings.h"
 #include "gui/personal/DeviceIllustration.h"
 #include "gui/personal/LoginStartup.h"
 #include "gui/personal/PersonalWindow.h"
-#include "common/Settings.h"
 
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
-#include <QToolButton>
-#include <QPushButton>
 #include <QDir>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPalette>
+#include <QPushButton>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QToolButton>
 #include <utility>
 
 using deskflow::gui::personal::DeviceIllustration;
@@ -47,8 +47,9 @@ Snapshot topology(const QList<deskflow::layout::Screen> &screens)
 
 Snapshot threeScreens()
 {
-  return topology({{QStringLiteral("source"), 0, 0}, {QStringLiteral("client-a"), 1, 0},
-                   {QStringLiteral("client-b"), 0, 1}});
+  return topology(
+      {{QStringLiteral("source"), 0, 0}, {QStringLiteral("client-a"), 1, 0}, {QStringLiteral("client-b"), 0, 1}}
+  );
 }
 
 QPoint cellPoint(const DeviceIllustration &widget, const Snapshot &state, int column, int row)
@@ -56,27 +57,33 @@ QPoint cellPoint(const DeviceIllustration &widget, const Snapshot &state, int co
   const auto &reference = state.screens.first();
   const auto rectangle = widget.screenGeometry(reference.name);
   const qreal scale = rectangle.width() / 132;
-  return (rectangle.center() + QPointF((column - reference.column) * 150 * scale,
-                                      (row - reference.row) * 96 * scale)).toPoint();
+  return (rectangle.center() + QPointF((column - reference.column) * 150 * scale, (row - reference.row) * 96 * scale))
+      .toPoint();
 }
 
 QPoint target(Direction direction)
 {
   switch (direction) {
-  case Direction::Left: return {105, 140};
-  case Direction::Right: return {495, 140};
-  case Direction::Above: return {300, 43};
-  case Direction::Below: return {300, 237};
-  default: return {300, 140};
+  case Direction::Left:
+    return {105, 140};
+  case Direction::Right:
+    return {495, 140};
+  case Direction::Above:
+    return {300, 43};
+  case Direction::Below:
+    return {300, 237};
+  default:
+    return {300, 140};
   }
 }
 
 void mouse(DeviceIllustration &widget, QEvent::Type type, const QPoint &point)
 {
   const bool release = type == QEvent::MouseButtonRelease;
-  QMouseEvent event(type, point, widget.mapToGlobal(point),
-                    type == QEvent::MouseMove ? Qt::NoButton : Qt::LeftButton,
-                    release ? Qt::NoButton : Qt::LeftButton, Qt::NoModifier);
+  QMouseEvent event(
+      type, point, widget.mapToGlobal(point), type == QEvent::MouseMove ? Qt::NoButton : Qt::LeftButton,
+      release ? Qt::NoButton : Qt::LeftButton, Qt::NoModifier
+  );
   QCoreApplication::sendEvent(&widget, &event);
 }
 
@@ -138,7 +145,10 @@ private Q_SLOTS:
     QVERIFY(widget.accessibleName().contains(QStringLiteral("my-mac")));
   }
 
-  void draggingSourceInvertsItsMovement_data() { draggingClientRequestsAllFourDirections_data(); }
+  void draggingSourceInvertsItsMovement_data()
+  {
+    draggingClientRequestsAllFourDirections_data();
+  }
 
   void draggingSourceInvertsItsMovement()
   {
@@ -158,10 +168,12 @@ private Q_SLOTS:
     DeviceIllustration widget;
     prepare(widget, snapshot());
     QSignalSpy changes(&widget, &DeviceIllustration::screenLayoutRequested);
-    const QList<std::pair<Qt::Key, Direction>> keys{{Qt::Key_Left, Direction::Left},
-                                                 {Qt::Key_Up, Direction::Above},
-                                                 {Qt::Key_Down, Direction::Below},
-                                                 {Qt::Key_Right, Direction::Right}};
+    const QList<std::pair<Qt::Key, Direction>> keys{
+        {Qt::Key_Left, Direction::Left},
+        {Qt::Key_Up, Direction::Above},
+        {Qt::Key_Down, Direction::Below},
+        {Qt::Key_Right, Direction::Right}
+    };
     for (const auto &[key, direction] : keys) {
       widget.setScreenLayout(snapshot(deskflow::layout::opposite(direction)));
       widget.setFocus();
@@ -211,7 +223,8 @@ private Q_SLOTS:
     widget.setConfigurationBusy(true);
     attempt();
     widget.setConfigurationBusy(false);
-    auto readOnly = snapshot(); readOnly.editable = false;
+    auto readOnly = snapshot();
+    readOnly.editable = false;
     readOnly.error = QStringLiteral("来源电脑不支持远程布局");
     widget.setScreenLayout(readOnly);
     QCOMPARE(widget.accessibleDescription(), readOnly.error);
@@ -275,7 +288,8 @@ private Q_SLOTS:
     QCOMPARE(legacy.count(), 0);
     const auto move = qvariant_cast<deskflow::layout::Move>(moves.first().first());
     QCOMPARE(move.screenName, name);
-    QCOMPARE(move.column, 1); QCOMPARE(move.row, 1);
+    QCOMPARE(move.column, 1);
+    QCOMPARE(move.row, 1);
     QCOMPARE(move.expectedRevision, actual.revision);
     QCOMPARE(widget.screenLayout().screens, actual.screens);
     auto applied = deskflow::layout::movedSnapshot(actual, move);
@@ -287,54 +301,77 @@ private Q_SLOTS:
   void fourComputerLAndTLayoutsCanBeRearranged()
   {
     DeviceIllustration widget;
-    const auto ell = topology({{QStringLiteral("source"), 0, 0}, {QStringLiteral("client-a"), 1, 0},
-                               {QStringLiteral("end"), 2, 0}, {QStringLiteral("bottom"), 0, 1}});
+    const auto ell = topology(
+        {{QStringLiteral("source"), 0, 0},
+         {QStringLiteral("client-a"), 1, 0},
+         {QStringLiteral("end"), 2, 0},
+         {QStringLiteral("bottom"), 0, 1}}
+    );
     prepare(widget, ell);
     QSignalSpy moves(&widget, &DeviceIllustration::screenMoveRequested);
     drag(widget, widget.screenGeometry(QStringLiteral("end")).center().toPoint(), cellPoint(widget, ell, 1, 1));
     QCOMPARE(moves.count(), 1);
     auto move = qvariant_cast<deskflow::layout::Move>(moves.takeFirst().first());
-    QCOMPARE(move.screenName, QStringLiteral("end")); QCOMPARE(move.column, 1); QCOMPARE(move.row, 1);
-    const auto tee = topology({{QStringLiteral("source"), 0, 0}, {QStringLiteral("left"), -1, 0},
-                               {QStringLiteral("client-a"), 1, 0}, {QStringLiteral("bottom"), 0, 1}});
+    QCOMPARE(move.screenName, QStringLiteral("end"));
+    QCOMPARE(move.column, 1);
+    QCOMPARE(move.row, 1);
+    const auto tee = topology(
+        {{QStringLiteral("source"), 0, 0},
+         {QStringLiteral("left"), -1, 0},
+         {QStringLiteral("client-a"), 1, 0},
+         {QStringLiteral("bottom"), 0, 1}}
+    );
     widget.resize(600, 400);
     widget.setScreenLayout(tee);
     widget.findChild<QToolButton *>(QStringLiteral("screenLayoutZoomOut"))->click();
     drag(widget, widget.screenGeometry(QStringLiteral("bottom")).center().toPoint(), cellPoint(widget, tee, 0, -1));
     QCOMPARE(moves.count(), 1);
     move = qvariant_cast<deskflow::layout::Move>(moves.first().first());
-    QCOMPARE(move.screenName, QStringLiteral("bottom")); QCOMPARE(move.column, 0); QCOMPARE(move.row, -1);
+    QCOMPARE(move.screenName, QStringLiteral("bottom"));
+    QCOMPARE(move.column, 0);
+    QCOMPARE(move.row, -1);
     QCOMPARE(widget.screenLayout().screens, tee.screens);
   }
 
   void edgeDropKeepsTheSnappedCellAfterAutomaticPan()
   {
-    const auto tee = topology({{QStringLiteral("source"), 0, 0}, {QStringLiteral("left"), -1, 0},
-                               {QStringLiteral("client-a"), 1, 0}, {QStringLiteral("bottom"), 0, 1}});
-    DeviceIllustration widget; prepare(widget, tee);
+    const auto tee = topology(
+        {{QStringLiteral("source"), 0, 0},
+         {QStringLiteral("left"), -1, 0},
+         {QStringLiteral("client-a"), 1, 0},
+         {QStringLiteral("bottom"), 0, 1}}
+    );
+    DeviceIllustration widget;
+    prepare(widget, tee);
     QSignalSpy moves(&widget, &DeviceIllustration::screenMoveRequested);
     const QPoint edge(qRound(widget.screenGeometry(QStringLiteral("source")).center().x()), 42);
     drag(widget, widget.screenGeometry(QStringLiteral("bottom")).center().toPoint(), edge);
     QCOMPARE(moves.count(), 1);
     const auto move = qvariant_cast<deskflow::layout::Move>(moves.first().first());
-    QCOMPARE(move.column, 0); QCOMPARE(move.row, -1);
+    QCOMPARE(move.column, 0);
+    QCOMPARE(move.row, -1);
     QCOMPARE(widget.screenLayout().screens, tee.screens);
   }
 
   void topologyPairKeyboardStillRotatesToEveryCardinalSide()
   {
     const auto pair = topology({{QStringLiteral("source"), 0, 0}, {QStringLiteral("client-a"), 1, 0}});
-    DeviceIllustration widget; prepare(widget, pair);
+    DeviceIllustration widget;
+    prepare(widget, pair);
     QSignalSpy moves(&widget, &DeviceIllustration::screenMoveRequested);
     QTest::keyClick(&widget, Qt::Key_Up);
     QCOMPARE(moves.count(), 1);
     auto move = qvariant_cast<deskflow::layout::Move>(moves.takeFirst().first());
-    QCOMPARE(move.screenName, QStringLiteral("client-a")); QCOMPARE(move.column, 0); QCOMPARE(move.row, -1);
+    QCOMPARE(move.screenName, QStringLiteral("client-a"));
+    QCOMPARE(move.column, 0);
+    QCOMPARE(move.row, -1);
     widget.findChild<QComboBox *>(QStringLiteral("screenLayoutDevicePicker"))->setCurrentText(QStringLiteral("source"));
     QTest::keyClick(&widget, Qt::Key_Down);
     QCOMPARE(moves.count(), 1);
     move = qvariant_cast<deskflow::layout::Move>(moves.first().first());
-    QCOMPARE(move.screenName, QStringLiteral("source")); QCOMPARE(move.column, 1); QCOMPARE(move.row, 1);
+    QCOMPARE(move.screenName, QStringLiteral("source"));
+    QCOMPARE(move.column, 1);
+    QCOMPARE(move.row, 1);
   }
 
   void topologyCollisionsAndBridgeDisconnectsAreRejected()
@@ -343,15 +380,22 @@ private Q_SLOTS:
     const auto actual = threeScreens();
     prepare(widget, actual);
     QSignalSpy moves(&widget, &DeviceIllustration::screenMoveRequested);
-    drag(widget, widget.screenGeometry(QStringLiteral("client-a")).center().toPoint(),
-         widget.screenGeometry(QStringLiteral("client-b")).center().toPoint());
+    drag(
+        widget, widget.screenGeometry(QStringLiteral("client-a")).center().toPoint(),
+        widget.screenGeometry(QStringLiteral("client-b")).center().toPoint()
+    );
     QCOMPARE(moves.count(), 0);
     QVERIFY(!widget.accessibleDescription().isEmpty());
-    const auto tee = topology({{QStringLiteral("source"), 0, 0}, {QStringLiteral("left"), -1, 0},
-                               {QStringLiteral("client-a"), 1, 0}, {QStringLiteral("bottom"), 0, 1}});
+    const auto tee = topology(
+        {{QStringLiteral("source"), 0, 0},
+         {QStringLiteral("left"), -1, 0},
+         {QStringLiteral("client-a"), 1, 0},
+         {QStringLiteral("bottom"), 0, 1}}
+    );
     widget.setScreenLayout(tee);
     auto *picker = widget.findChild<QComboBox *>(QStringLiteral("screenLayoutDevicePicker"));
-    QVERIFY(picker); picker->setCurrentText(QStringLiteral("source"));
+    QVERIFY(picker);
+    picker->setCurrentText(QStringLiteral("source"));
     QTest::keyClick(&widget, Qt::Key_Up);
     QCOMPARE(moves.count(), 0);
     QCOMPARE(widget.screenLayout().screens, tee.screens);
@@ -374,14 +418,18 @@ private Q_SLOTS:
     QCOMPARE(qvariant_cast<deskflow::layout::Move>(moves.takeFirst().first()).screenName, QStringLiteral("client-a"));
     const auto from = widget.screenGeometry(QStringLiteral("client-a")).center().toPoint();
     const auto to = cellPoint(widget, actual, 1, 1);
-    mouse(widget, QEvent::MouseButtonPress, from); mouse(widget, QEvent::MouseMove, to);
-    QTest::keyClick(&widget, Qt::Key_Escape); mouse(widget, QEvent::MouseButtonRelease, to);
+    mouse(widget, QEvent::MouseButtonPress, from);
+    mouse(widget, QEvent::MouseMove, to);
+    QTest::keyClick(&widget, Qt::Key_Escape);
+    mouse(widget, QEvent::MouseButtonRelease, to);
     drag(widget, from, {-40, -40});
-    mouse(widget, QEvent::MouseButtonPress, from); mouse(widget, QEvent::MouseMove, from + QPoint(15, 0));
+    mouse(widget, QEvent::MouseButtonPress, from);
+    mouse(widget, QEvent::MouseMove, from + QPoint(15, 0));
     mouse(widget, QEvent::MouseButtonRelease, from);
     QCOMPARE(moves.count(), 0);
     widget.setScreenLayout(actual, true);
-    QTest::keyClick(&widget, Qt::Key_Down); drag(widget, from, to);
+    QTest::keyClick(&widget, Qt::Key_Down);
+    drag(widget, from, to);
     QCOMPARE(moves.count(), 0);
     QCOMPARE(widget.screenLayout().screens, actual.screens);
   }
@@ -391,25 +439,34 @@ private Q_SLOTS:
     QList<deskflow::layout::Screen> screens;
     for (int row = 0; row < 3; ++row)
       for (int column = 0; column < 5; ++column)
-        screens.append({row == 0 && column == 0 ? QStringLiteral("source") : row == 0 && column == 1 ? QStringLiteral("client-a") : QStringLiteral("computer-%1").arg(row * 5 + column), column, row});
+        screens.append(
+            {row == 0 && column == 0   ? QStringLiteral("source")
+             : row == 0 && column == 1 ? QStringLiteral("client-a")
+                                       : QStringLiteral("computer-%1").arg(row * 5 + column),
+             column, row}
+        );
     const auto actual = topology(screens);
     DeviceIllustration widget;
     prepare(widget, actual);
     const QRectF area(4, 41, widget.width() - 8, widget.height() - 65);
-    for (const auto &screen : screens) QVERIFY(area.contains(widget.screenGeometry(screen.name)));
+    for (const auto &screen : screens)
+      QVERIFY(area.contains(widget.screenGeometry(screen.name)));
     const auto initial = widget.screenGeometry(QStringLiteral("source"));
     auto *zoom = widget.findChild<QToolButton *>(QStringLiteral("screenLayoutZoomIn"));
     auto *fit = widget.findChild<QToolButton *>(QStringLiteral("screenLayoutFit"));
-    QVERIFY(zoom && fit); zoom->click();
+    QVERIFY(zoom && fit);
+    zoom->click();
     QVERIFY(widget.screenGeometry(QStringLiteral("source")).width() > initial.width());
-    fit->click(); QCOMPARE(widget.screenGeometry(QStringLiteral("source")), initial);
+    fit->click();
+    QCOMPARE(widget.screenGeometry(QStringLiteral("source")), initial);
     QCOMPARE(widget.screenLayout().screens, actual.screens);
   }
 
   void connectionRowsKeepTheirTextVisibleAfterStylePolish()
   {
-    LoginStartup startup({[] { return LoginStartup::Status{}; },
-                          [](bool) { return LoginStartup::ChangeResult{}; }, [] {}});
+    LoginStartup startup(
+        {[] { return LoginStartup::Status{}; }, [](bool) { return LoginStartup::ChangeResult{}; }, [] {}}
+    );
     PersonalWindow window(nullptr, &startup);
     window.show();
     for (const QSize size : {QSize(900, 620), QSize(1060, 720)}) {
@@ -421,7 +478,8 @@ private Q_SLOTS:
       QCoreApplication::processEvents();
       int rows = 0;
       for (auto *button : window.findChildren<QPushButton *>()) {
-        if (!button->property("personalRow").toBool()) continue;
+        if (!button->property("personalRow").toBool())
+          continue;
         ++rows;
         QVERIFY2(button->height() >= 76, qPrintable(button->accessibleName()));
         for (auto *text : button->findChildren<QLabel *>()) {
@@ -429,20 +487,25 @@ private Q_SLOTS:
           QVERIFY2(button->rect().contains(text->geometry()), qPrintable(text->text()));
         }
       }
-      QCOMPARE(rows, 2);
+      QCOMPARE(rows, 1);
     }
   }
 
   void renderLayoutScreenshots()
   {
     const QString directory = qEnvironmentVariable("DESKBRIDGE_LAYOUT_SCREENSHOTS");
-    if (directory.isEmpty()) QSKIP("Set DESKBRIDGE_LAYOUT_SCREENSHOTS to render visual QA fixtures.");
+    if (directory.isEmpty())
+      QSKIP("Set DESKBRIDGE_LAYOUT_SCREENSHOTS to render visual QA fixtures.");
     QVERIFY(QDir().mkpath(directory));
     const QPalette original = QApplication::palette();
     // Restore global appearance even if an image assertion fails.
-    struct RestorePalette {
+    struct RestorePalette
+    {
       QPalette palette;
-      ~RestorePalette() { QApplication::setPalette(palette); }
+      ~RestorePalette()
+      {
+        QApplication::setPalette(palette);
+      }
     } restore{original};
     for (const bool dark : {false, true}) {
       QPalette palette = original;
@@ -462,18 +525,23 @@ private Q_SLOTS:
         palette.setColor(QPalette::PlaceholderText, QColor("#74747d"));
       }
       QApplication::setPalette(palette);
-      LoginStartup startup({[] { return LoginStartup::Status{false, false, false, {}, {}}; },
-                            [](bool) { return LoginStartup::ChangeResult{}; }, [] {}});
+      LoginStartup startup(
+          {[] { return LoginStartup::Status{false, false, false, {}, {}}; },
+           [](bool) { return LoginStartup::ChangeResult{}; }, [] {}}
+      );
       PersonalWindow window(nullptr, &startup);
       window.setDeviceContext(deskflow::shortcuts::DeviceOS::Linux, false);
-      window.setConnectionStatus(deskflow::core::ConnectionState::Connected,
-                                 deskflow::core::ProcessState::Started, true, true, true,
-                                 QStringLiteral("192.0.2.10"), QStringLiteral("my-mac"));
+      window.setConnectionStatus(
+          deskflow::core::ConnectionState::Connected, deskflow::core::ProcessState::Started, true, true, true,
+          QStringLiteral("192.0.2.10"), QStringLiteral("my-mac")
+      );
       window.setMappingStatus(true, 4, QStringLiteral("完整快捷键适配 · 全部应用 · Ctrl+空格保留"));
-      const QList<std::pair<Direction, QString>> choices{{Direction::Left, QStringLiteral("left")},
-                                                       {Direction::Right, QStringLiteral("right")},
-                                                       {Direction::Above, QStringLiteral("above")},
-                                                       {Direction::Below, QStringLiteral("below")}};
+      const QList<std::pair<Direction, QString>> choices{
+          {Direction::Left, QStringLiteral("left")},
+          {Direction::Right, QStringLiteral("right")},
+          {Direction::Above, QStringLiteral("above")},
+          {Direction::Below, QStringLiteral("below")}
+      };
       for (const QSize size : {QSize(1060, 720), QSize(900, 620)}) {
         window.resize(size);
         window.show();
@@ -484,26 +552,39 @@ private Q_SLOTS:
           QCoreApplication::processEvents();
           const auto filename = QStringLiteral("%1/%2-%3-%4x%5.png")
                                     .arg(directory, dark ? QStringLiteral("dark") : QStringLiteral("light"), name)
-                                    .arg(size.width()).arg(size.height());
+                                    .arg(size.width())
+                                    .arg(size.height());
           QVERIFY2(window.grab().save(filename), qPrintable(filename));
         }
       }
       QList<deskflow::layout::Screen> fifteen;
       for (int row = 0; row < 3; ++row)
         for (int column = 0; column < 5; ++column)
-          fifteen.append({row == 0 && column == 0 ? QStringLiteral("source") : row == 0 && column == 1 ? QStringLiteral("client-a") : QStringLiteral("computer-%1").arg(row * 5 + column), column, row});
+          fifteen.append(
+              {row == 0 && column == 0   ? QStringLiteral("source")
+               : row == 0 && column == 1 ? QStringLiteral("client-a")
+                                         : QStringLiteral("computer-%1").arg(row * 5 + column),
+               column, row}
+          );
       const QList<std::pair<QString, Snapshot>> graphs{
           {QStringLiteral("three-L"), threeScreens()},
-          {QStringLiteral("four-T"), topology({{QStringLiteral("source"), 0, 0}, {QStringLiteral("left"), -1, 0},
-                                               {QStringLiteral("client-a"), 1, 0}, {QStringLiteral("bottom"), 0, 1}})},
-          {QStringLiteral("fifteen"), topology(fifteen)}};
+          {QStringLiteral("four-T"), topology(
+                                         {{QStringLiteral("source"), 0, 0},
+                                          {QStringLiteral("left"), -1, 0},
+                                          {QStringLiteral("client-a"), 1, 0},
+                                          {QStringLiteral("bottom"), 0, 1}}
+                                     )},
+          {QStringLiteral("fifteen"), topology(fifteen)}
+      };
       for (const QSize size : {QSize(1060, 720), QSize(900, 620)}) {
         window.resize(size);
         for (const auto &[name, graph] : graphs) {
-          window.setScreenLayout(graph); QCoreApplication::processEvents();
+          window.setScreenLayout(graph);
+          QCoreApplication::processEvents();
           const auto filename = QStringLiteral("%1/%2-%3-%4x%5.png")
                                     .arg(directory, dark ? QStringLiteral("dark") : QStringLiteral("light"), name)
-                                    .arg(size.width()).arg(size.height());
+                                    .arg(size.width())
+                                    .arg(size.height());
           QVERIFY(window.grab().save(filename));
         }
       }
@@ -513,8 +594,10 @@ private Q_SLOTS:
         window.findChild<DeviceIllustration *>()->setFocus();
         QCoreApplication::processEvents();
         const auto file = QStringLiteral("%1/%2-focused-%3.png")
-                              .arg(directory, dark ? QStringLiteral("dark") : QStringLiteral("light"),
-                                   direction == Direction::Above ? QStringLiteral("above") : QStringLiteral("below"));
+                              .arg(
+                                  directory, dark ? QStringLiteral("dark") : QStringLiteral("light"),
+                                  direction == Direction::Above ? QStringLiteral("above") : QStringLiteral("below")
+                              );
         QVERIFY(window.grab().save(file));
       }
       window.setScreenLayout(snapshot(Direction::Right));
@@ -523,31 +606,45 @@ private Q_SLOTS:
       QCoreApplication::processEvents();
       const auto map = [widget](const QPoint &point) {
         const qreal scale = qMin(widget->width() / 600.0, widget->height() / 280.0);
-        return (QPointF((widget->width() - 600 * scale) / 2, (widget->height() - 280 * scale) / 2) + QPointF(point) * scale).toPoint();
+        return (QPointF((widget->width() - 600 * scale) / 2, (widget->height() - 280 * scale) / 2) +
+                QPointF(point) * scale)
+            .toPoint();
       };
       mouse(*widget, QEvent::MouseButtonPress, map(target(Direction::Right)));
       mouse(*widget, QEvent::MouseMove, map(target(Direction::Above)));
       QCoreApplication::processEvents();
-      QVERIFY(window.grab().save(directory + (dark ? QStringLiteral("/dark-drag.png") : QStringLiteral("/light-drag.png"))));
+      QVERIFY(
+          window.grab().save(directory + (dark ? QStringLiteral("/dark-drag.png") : QStringLiteral("/light-drag.png")))
+      );
       QTest::keyClick(widget, Qt::Key_Escape);
       mouse(*widget, QEvent::MouseButtonPress, map({300, 140}));
       mouse(*widget, QEvent::MouseMove, map(target(Direction::Above)));
       QCoreApplication::processEvents();
-      QVERIFY(window.grab().save(directory + (dark ? QStringLiteral("/dark-source-drag.png") : QStringLiteral("/light-source-drag.png"))));
+      QVERIFY(window.grab().save(
+          directory + (dark ? QStringLiteral("/dark-source-drag.png") : QStringLiteral("/light-source-drag.png"))
+      ));
       QTest::keyClick(widget, Qt::Key_Escape);
       window.setScreenLayout(snapshot(Direction::Right), true);
       QCoreApplication::processEvents();
-      QVERIFY(window.grab().save(directory + (dark ? QStringLiteral("/dark-pending.png") : QStringLiteral("/light-pending.png"))));
-      window.setScreenLayout(Snapshot{{}, {}, Direction::Unknown, false, QStringLiteral("正在等待来源电脑提供实际屏幕布局")});
+      QVERIFY(window.grab().save(
+          directory + (dark ? QStringLiteral("/dark-pending.png") : QStringLiteral("/light-pending.png"))
+      ));
+      window.setScreenLayout(
+          Snapshot{{}, {}, Direction::Unknown, false, QStringLiteral("正在等待来源电脑提供实际屏幕布局")}
+      );
       QCoreApplication::processEvents();
-      QVERIFY(window.grab().save(directory + (dark ? QStringLiteral("/dark-unknown.png") : QStringLiteral("/light-unknown.png"))));
+      QVERIFY(window.grab().save(
+          directory + (dark ? QStringLiteral("/dark-unknown.png") : QStringLiteral("/light-unknown.png"))
+      ));
     }
   }
 
   void uncertainSynchronizationPermitsOnlyStoppingAnExistingConnection()
   {
-    LoginStartup startup({[] { return LoginStartup::Status{true, false, false, {}, {}}; },
-                          [](bool) { return LoginStartup::ChangeResult{}; }, [] {}});
+    LoginStartup startup(
+        {[] { return LoginStartup::Status{true, false, false, {}, {}}; },
+         [](bool) { return LoginStartup::ChangeResult{}; }, [] {}}
+    );
     PersonalWindow window(nullptr, &startup);
     auto *primary = window.findChild<QPushButton *>(QStringLiteral("personalPrimaryConnection"));
     auto *automatic = window.findChild<QCheckBox *>(QStringLiteral("automaticSharingSwitch"));
@@ -557,7 +654,8 @@ private Q_SLOTS:
     QVERIFY(primary && automatic && apply && note && devices);
     QPushButton *options = nullptr;
     for (auto *button : window.findChildren<QPushButton *>())
-      if (button->accessibleName() == QStringLiteral("连接选项")) options = button;
+      if (button->accessibleName() == QStringLiteral("连接设置"))
+        options = button;
     QVERIFY(options);
     const bool savedDraft = !automatic->isChecked();
     automatic->setChecked(savedDraft);
@@ -569,8 +667,9 @@ private Q_SLOTS:
     window.setDeviceContext(deskflow::shortcuts::DeviceOS::Linux, true);
     window.setScreenLayout(snapshot(), true, feedback);
     window.setConfigurationBusy(true, true);
-    window.setConnectionStatus(deskflow::core::ConnectionState::Listening,
-                               deskflow::core::ProcessState::Started, true, false, true, {}, {});
+    window.setConnectionStatus(
+        deskflow::core::ConnectionState::Listening, deskflow::core::ProcessState::Started, true, false, true, {}, {}
+    );
     QCOMPARE(note->text(), feedback);
     QCOMPARE(devices->accessibleDescription(), feedback);
     QVERIFY(primary->isEnabled());
@@ -588,11 +687,13 @@ private Q_SLOTS:
     window.setConfigurationBusy(true);
     QVERIFY(!primary->isEnabled());
     window.setConfigurationBusy(true, true);
-    window.setConnectionStatus(deskflow::core::ConnectionState::Disconnected,
-                               deskflow::core::ProcessState::Stopping, true, false, true, {}, {});
+    window.setConnectionStatus(
+        deskflow::core::ConnectionState::Disconnected, deskflow::core::ProcessState::Stopping, true, false, true, {}, {}
+    );
     QVERIFY(!primary->isEnabled());
-    window.setConnectionStatus(deskflow::core::ConnectionState::Disconnected,
-                               deskflow::core::ProcessState::Stopped, true, false, true, {}, {});
+    window.setConnectionStatus(
+        deskflow::core::ConnectionState::Disconnected, deskflow::core::ProcessState::Stopped, true, false, true, {}, {}
+    );
     QVERIFY(!primary->isEnabled());
     primary->click();
     QCOMPARE(starts.count(), 0);
@@ -604,8 +705,10 @@ private Q_SLOTS:
 
   void personalWindowForwardsRequestsAndDescribesConfirmedEdges()
   {
-    LoginStartup startup({[] { return LoginStartup::Status{false, false, false, {}, {}}; },
-                          [](bool) { return LoginStartup::ChangeResult{}; }, [] {}});
+    LoginStartup startup(
+        {[] { return LoginStartup::Status{false, false, false, {}, {}}; },
+         [](bool) { return LoginStartup::ChangeResult{}; }, [] {}}
+    );
     PersonalWindow window(nullptr, &startup);
     auto *widget = window.findChild<DeviceIllustration *>();
     auto *hint = window.findChild<QLabel *>(QStringLiteral("personalConnectionHint"));

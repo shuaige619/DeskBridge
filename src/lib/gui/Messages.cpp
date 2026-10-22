@@ -3,21 +3,57 @@
  * SPDX-FileCopyrightText: (C) 2024 Synergy App Ltd
  * SPDX-License-Identifier: GPL-2.0-only WITH LicenseRef-OpenSSL-Exception
  */
+// 桌桥提示界面重设计，2026-10-21；保留原有响应与设置语义。
 
 #include "Messages.h"
-
 #include "Logger.h"
-
 #include "common/Settings.h"
 #include "common/UrlConstants.h"
 #include "common/VersionInfo.h"
+#include "personal/PersonalStyle.h"
 
-#include <QCheckBox>
+#include <QApplication>
+#include <QClipboard>
+#include <QGridLayout>
 #include <QMessageBox>
 #include <QPushButton>
 #include <memory>
 
 namespace deskflow::gui::messages {
+
+namespace {
+void styleMessage(QMessageBox &message, const QString &title)
+{
+  message.setWindowTitle(title);
+  message.setProperty("personalDialog", true);
+  message.setWindowModality(Qt::WindowModal);
+  message.setTextFormat(Qt::RichText);
+  message.setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::LinksAccessibleByMouse);
+  message.setMinimumWidth(420);
+  deskflow::gui::personal::applyPersonalStyle(&message);
+}
+
+void information(QWidget *parent, const QString &title, const QString &text)
+{
+  QMessageBox message(QMessageBox::Information, title, text, QMessageBox::Ok, parent);
+  styleMessage(message, title);
+  message.button(QMessageBox::Ok)->setText(QObject::tr("知道了"));
+  message.button(QMessageBox::Ok)->setProperty("primaryButton", true);
+  message.exec();
+}
+
+void addDiagnosticCopy(QMessageBox &message, const QString &details)
+{
+  auto *copy = new QPushButton(QObject::tr("复制错误信息"), &message);
+  // Place the utility action outside QMessageBox's closing button box.
+  auto *layout = qobject_cast<QGridLayout *>(message.layout());
+  layout->addWidget(copy, layout->rowCount(), 0, 1, layout->columnCount(), Qt::AlignLeft);
+  QObject::connect(copy, &QPushButton::clicked, &message, [details, copy] {
+    QApplication::clipboard()->setText(details);
+    copy->setText(QObject::tr("已复制错误信息"));
+  });
+}
+} // namespace
 
 struct Errors
 {
@@ -37,43 +73,44 @@ void raiseCriticalDialog()
 
 void showErrorDialog(const QString &message, const QString &fileLine, QtMsgType type)
 {
-  auto errorType = QtFatalMsg ? QObject::tr("fatal error") : QObject::tr("error");
-  auto title = QStringLiteral("%1 %2").arg(kAppName, errorType);
-  auto text = QObject::tr(
-                  R"(<p>Please <a href="%1">report a bug</a>)"
-                  " and copy/paste the following error:</p><pre>v%2\n%3\n%4</pre>"
-  )
-                  .arg(kUrlHelp, kVersion, message, fileLine);
-
-  if (type == QtFatalMsg) {
-    text.prepend(QObject::tr("<p>Sorry, a fatal error has occurred and the application must now exit.</p>\n"));
-    // create a blocking message box for fatal errors, as we want to wait
-    // until the dialog is dismissed before aborting the app.
-    QMessageBox::critical(nullptr, title, text, QMessageBox::Abort);
+  const bool fatal = type == QtFatalMsg;
+  const auto title = fatal ? QObject::tr("桌桥 · 无法继续运行") : QObject::tr("桌桥 · 发生错误");
+  const auto text = fatal ? QObject::tr(
+                                "<p>桌桥遇到了无法恢复的错误，关闭此提示后将退出。</p>"
+                                "<p>请复制错误信息以便排查，随后重新打开桌桥。</p>"
+                            )
+                          : QObject::tr(
+                                "<p>桌桥遇到了错误。你可以复制信息以便排查。</p>"
+                                "<p>选择「忽略此错误」后，本次运行期间不再重复提醒相同错误。</p>"
+                            );
+  const auto details =
+      QStringLiteral("桌桥\nVersion: %1 (%2)\n%3\n%4").arg(kVersion, kVersionGitSha, message, fileLine);
+  if (fatal) {
+    // Fatal errors must remain blocking until the user dismisses the dialog,
+    // after which messageHandler aborts the process as before.
+    QMessageBox error(QMessageBox::Critical, title, text, QMessageBox::Abort);
+    styleMessage(error, title);
+    error.setDetailedText(details);
+    error.button(QMessageBox::Abort)->setText(QObject::tr("退出桌桥"));
+    addDiagnosticCopy(error, details);
+    error.exec();
     return;
   }
 
-  text.prepend(QObject::tr("<p>Sorry, a critical error has occurred.</p>\n"));
   if (!Errors::s_ignoredErrors.contains(message)) {
-    // prevent message boxes piling up by deleting the last one if it exists.
-    // if none exists yet, then nothing will happen.
     Errors::s_criticalMessage.reset();
-
-    // as we don't abort for critical messages, create a new non-blocking
-    // message box. this is so that we don't block the message handler; if we
-    // did, we would prevent new messages from being logged properly.
-    // the memory will stay allocated until the app exits, which is acceptable.
     Errors::s_criticalMessage =
         std::make_unique<QMessageBox>(QMessageBox::Critical, title, text, QMessageBox::Ok | QMessageBox::Ignore);
-
-    QObject::connect(
-        Errors::s_criticalMessage.get(), &QMessageBox::finished, //
-        [message](int result) {
-          if (result == QMessageBox::Ignore) {
-            Errors::s_ignoredErrors.append(message);
-          }
-        }
-    );
+    styleMessage(*Errors::s_criticalMessage, title);
+    Errors::s_criticalMessage->setDetailedText(details);
+    Errors::s_criticalMessage->button(QMessageBox::Ok)->setText(QObject::tr("关闭提示"));
+    Errors::s_criticalMessage->button(QMessageBox::Ignore)->setText(QObject::tr("忽略此错误"));
+    addDiagnosticCopy(*Errors::s_criticalMessage, details);
+    QObject::connect(Errors::s_criticalMessage.get(), &QMessageBox::finished, [message](int result) {
+      if (result == QMessageBox::Ignore) {
+        Errors::s_ignoredErrors.append(message);
+      }
+    });
     Errors::s_criticalMessage->open();
   }
 }
@@ -88,22 +125,12 @@ QString fileLine(const QMessageLogContext &context)
 
 void messageHandler(QtMsgType type, const QMessageLogContext &context, const QString &message)
 {
-  const auto fileLine = messages::fileLine(context);
-  Logger::instance()->handleMessage(type, fileLine, message);
-
+  const auto source = messages::fileLine(context);
+  Logger::instance()->handleMessage(type, source, message);
   if (type == QtFatalMsg || type == QtCriticalMsg) {
-    showErrorDialog(message, fileLine, type);
+    showErrorDialog(message, source, type);
   }
-
   if (type == QtFatalMsg) {
-    // developers: if you hit this line in your debugger, traverse the stack
-    // to find the cause of the fatal error. important: crash the app on fatal
-    // error to prevent the app being used in a broken state.
-    //
-    // hint: if you don't want to crash, but still want to show an error
-    // message, use `qCritical()` instead of `qFatal()`. you should use
-    // fatal errors when the app is in an unrecoverable state; i.e. it cannot
-    // function correctly in it's current state and must be restarted.
     abort();
   }
 }
@@ -111,98 +138,97 @@ void messageHandler(QtMsgType type, const QMessageLogContext &context, const QSt
 void showCloseReminder(QWidget *parent)
 {
   auto message = QObject::tr(
-                     "<p>%1 will continue to run in the background and can be accessed via the %1 icon in your "
-                     "system notifications area. This setting can be disabled.</p>"
-  )
-                     .arg(kAppName);
-
+      "<p>桌桥会继续在后台共享键鼠。</p>"
+      "<p>点击系统通知区域的桌桥图标，可以重新打开窗口。"
+      "你可以在「通用设置」中调整关闭窗口后的行为。</p>"
+  );
 #if defined(Q_OS_LINUX)
   message.append(
       QObject::tr(
-          "<p>On Linux systems using GNOME 3, the notification area might be disabled. "
-          R"(You may need to <a href="%1">enable an extension</a> to see the %2 tray icon.</p>)"
+          "<p>GNOME 3 的通知区域可能默认关闭。"
+          "如果看不到图标，可<a href=\"%1\">启用托盘扩展</a>。</p>"
       )
-          .arg(kUrlGnomeTrayFix, kAppName)
+          .arg(kUrlGnomeTrayFix)
   );
 #endif
-
-  QMessageBox::information(parent, kAppName, message);
+  information(parent, QObject::tr("桌桥仍在后台运行"), message);
 }
 
 void showFirstServerStartMessage(QWidget *parent)
 {
-  QMessageBox::information(
-      parent, QObject::tr("%1 Server").arg(kAppName),
+  information(
+      parent, QObject::tr("已开始共享键鼠"),
       QObject::tr(
-          "<p>Great, the %1 server is now running.</p>"
-          "<p>Now you can connect your client computers to this server. "
-          "You should see a prompt here on the server when a new client tries to connect.</p>"
+          "<p>这台电脑已成为来源端。</p>"
+          "<p>在其他电脑中选择接收端，并填写这台电脑的地址。"
+          "新设备请求连接时，桌桥会提示你确认。</p>"
+          "<p>连接后，在「设备与控制」中按实际摆放位置排列电脑。</p>"
       )
-          .arg(kAppName)
   );
 }
 
 void showFirstConnectedMessage(QWidget *parent)
 {
-  auto message = QObject::tr("<p>%1 is now connected!</p>").arg(kAppName);
-
+  auto message = QObject::tr("<p>设备已连接，可以开始共享键鼠了。</p>");
   if (Settings::value(Settings::Core::CoreMode).value<Settings::CoreMode>() == Settings::Server) {
     message.append(
         QObject::tr(
-            "<p>Try moving your mouse to your other computer. Once there, go ahead "
-            "and type something.</p>"
-            "<p>Don't forget, you can copy and paste between computers too.</p>"
+            "<p>将鼠标移向布局中另一台电脑的方向，即可切换控制并输入文字。"
+            "开启剪贴板共享后，也可以跨电脑复制粘贴。</p>"
         )
     );
   } else {
-    message.append(QObject::tr("<p>Try controlling this computer remotely.</p>"));
+    message.append(
+        QObject::tr(
+            "<p>使用来源端的鼠标和键盘控制这台电脑。"
+            "如需适配当前系统的组合键，请前往「快捷键映射」。</p>"
+        )
+    );
   }
-
   using ProcessMode = Settings::ProcessMode;
-
   if (Settings::value(Settings::Core::ProcessMode).value<ProcessMode>() == ProcessMode::Desktop &&
       !Settings::value(Settings::Gui::CloseToTray).toBool()) {
-    message.append(
-        QObject::tr(
-            "<p>As you do not have the setting enabled to keep %1 running in "
-            "the background, you'll need to keep this window open or minimized "
-            "to keep %1 running.</p>"
-        )
-            .arg(kAppName)
-    );
+    message.append(QObject::tr("<p>请保持桌桥窗口打开或最小化；当前设置下，关闭窗口会结束共享。</p>"));
   } else {
     message.append(
         QObject::tr(
-            "<p>You can now close this window and %1 will continue to run in "
-            "the background. This setting can be disabled.</p>"
+            "<p>可以关闭窗口，桌桥会继续在后台运行。"
+            "关闭窗口后的行为可在「通用设置」中调整。</p>"
         )
-            .arg(kAppName)
     );
   }
-
-  const auto title = QObject::tr("%1 Connected").arg(kAppName);
-  QMessageBox::information(parent, title, message);
+  information(parent, QObject::tr("桌桥 · 连接成功"), message);
 }
 
 bool showNewClientPrompt(QWidget *parent, const QString &clientName)
 {
   if (Settings::value(Settings::Security::TlsEnabled).toBool() &&
       Settings::value(Settings::Security::CheckPeers).toBool()) {
-    // When peer auth is enabled you will be prompted to allow the connection before seeing this dialog.
-    // This is why we do not show a dialog with an option to ignore the new client
-    QMessageBox::information(
-        parent, QObject::tr("%1 - New Client").arg(kAppName),
+    // Peer trust is confirmed before this informational layout prompt.
+    information(
+        parent, QObject::tr("添加已确认的设备"),
         QObject::tr(
-            "A new client called '%1' has been accepted. You'll need to add it to your server's computer layout."
+            "<p>已接受设备「%1」的连接。</p>"
+            "<p>接下来，将它加入「设备与控制」的电脑布局，以便通过屏幕边缘切换控制。</p>"
         )
-            .arg(clientName)
+            .arg(clientName.toHtmlEscaped())
     );
     return true;
   }
   QMessageBox message(parent);
-  message.addButton(QObject::tr("Ignore"), QMessageBox::RejectRole);
-  message.addButton(QObject::tr("Add client"), QMessageBox::AcceptRole);
-  message.setText(QObject::tr("A new client called '%1' wants to connect").arg(clientName));
+  styleMessage(message, QObject::tr("新设备请求连接"));
+  message.setIcon(QMessageBox::Question);
+  auto *ignore = message.addButton(QObject::tr("暂不添加"), QMessageBox::RejectRole);
+  auto *add = message.addButton(QObject::tr("添加设备"), QMessageBox::AcceptRole);
+  add->setProperty("primaryButton", true);
+  message.setDefaultButton(ignore);
+  message.setText(
+      QObject::tr(
+          "<p>设备「%1」希望连接到这台电脑。</p>"
+          "<p>添加后可以在电脑布局中安排它的位置。</p>"
+      )
+          .arg(clientName.toHtmlEscaped())
+  );
   message.exec();
   return message.buttonRole(message.clickedButton()) == QMessageBox::AcceptRole;
 }
@@ -210,17 +236,18 @@ bool showNewClientPrompt(QWidget *parent, const QString &clientName)
 bool showUpdateCheckOption(QWidget *parent)
 {
   QMessageBox message(parent);
-  message.addButton(QObject::tr("No thanks"), QMessageBox::RejectRole);
-  const auto checkButton = message.addButton(QObject::tr("Check for updates"), QMessageBox::AcceptRole);
+  styleMessage(message, QObject::tr("启动时检查更新"));
+  message.setIcon(QMessageBox::Question);
+  message.addButton(QObject::tr("暂不开启"), QMessageBox::RejectRole);
+  const auto checkButton = message.addButton(QObject::tr("开启检查"), QMessageBox::AcceptRole);
+  checkButton->setProperty("primaryButton", true);
   message.setText(
       QObject::tr(
-          "<p>Would you like to check for updates when %1 starts?</p>"
-          "<p>Checking for updates requires an Internet connection.</p>"
-          "<p>URL: <pre>%2</pre></p>"
+          "<p>每次启动桌桥时，检查是否有可用更新？</p>"
+          "<p>检查需要联网，使用以下更新地址：</p><p>%1</p>"
       )
-          .arg(kAppName, Settings::value(Settings::Gui::UpdateCheckUrl).toString())
+          .arg(Settings::value(Settings::Gui::UpdateCheckUrl).toString().toHtmlEscaped())
   );
-
   message.exec();
   return message.clickedButton() == checkButton;
 }
@@ -228,33 +255,28 @@ bool showUpdateCheckOption(QWidget *parent)
 bool showDaemonOffline(QWidget *parent)
 {
   QMessageBox message(parent);
+  styleMessage(message, QObject::tr("后台服务尚未就绪"));
   message.setIcon(QMessageBox::Warning);
-  message.setWindowTitle(QObject::tr("Background service offline"));
-
-  message.addButton(QObject::tr("Retry"), QMessageBox::AcceptRole);
-  const auto ignore = message.addButton(QObject::tr("Ignore"), QMessageBox::RejectRole);
-  const auto disable = message.addButton(QObject::tr("Disable"), QMessageBox::NoRole);
-
+  auto *retry = message.addButton(QObject::tr("重试连接"), QMessageBox::AcceptRole);
+  retry->setProperty("primaryButton", true);
+  message.setDefaultButton(retry);
+  const auto ignore = message.addButton(QObject::tr("稍后处理"), QMessageBox::RejectRole);
+  const auto disable = message.addButton(QObject::tr("改用桌面模式"), QMessageBox::NoRole);
   message.setText(
       QObject::tr(
-          "<p>There was a problem finding the %1 background service (daemon).</p>"
-          "<p>The background service makes %1 work with UAC prompts and the login screen.</p>"
-          "<p>If don't want to use the background service and intentionally stopped it, "
-          "you can prevent it's use by disabling this feature.</p>"
-          "<p>If you did not stop the background service intentionally, there may be a problem with it. "
-          "Please retry or try restarting the %1 service from the Windows services program.</p>"
+          "<p>无法连接桌桥后台服务。</p>"
+          "<p>后台服务用于支持 Windows 登录界面与 UAC 权限提示。"
+          "如果你需要这些功能，请重试，或在 Windows「服务」中重启桌桥服务。</p>"
+          "<p>如果你主动停止了服务，可以改用桌面模式；这会停用后台服务运行方式。</p>"
       )
-          .arg(kAppName)
   );
   message.exec();
-
   if (message.clickedButton() == ignore) {
     return false;
   } else if (message.clickedButton() == disable) {
     Settings::setValue(Settings::Core::ProcessMode, Settings::ProcessMode::Desktop);
     return false;
   }
-
   return true;
 }
 

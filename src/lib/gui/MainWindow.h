@@ -18,11 +18,11 @@
 #include <optional>
 
 #include "VersionChecker.h"
+#include "common/ShortcutRules.h"
 #include "config/ServerConfig.h"
 #include "gui/core/CoreProcess.h"
 #include "gui/core/NetworkMonitor.h"
 #include "net/Fingerprint.h"
-#include "common/ShortcutRules.h"
 
 #ifdef Q_OS_MACOS
 #include "gui/OSXHelpers.h"
@@ -36,9 +36,7 @@ class DeskflowApplication;
 class LogDock;
 class StatusBar;
 
-namespace Ui {
-class MainWindow;
-}
+struct MainWindowState;
 
 namespace deskflow::gui::ipc {
 class DaemonIpcClient;
@@ -47,7 +45,7 @@ namespace deskflow::gui::personal {
 class PersonalWindow;
 class ShortcutPage;
 class ScreenLayoutPersistence;
-}
+} // namespace deskflow::gui::personal
 
 class MainWindow : public QMainWindow
 {
@@ -82,7 +80,10 @@ public:
 
   void hide();
   deskflow::gui::personal::ShortcutPage *personalShortcutPage() const;
-  deskflow::gui::CoreProcess *personalCoreProcess() { return &m_coreProcess; }
+  deskflow::gui::CoreProcess *personalCoreProcess()
+  {
+    return &m_coreProcess;
+  }
   void refreshPersonalUi();
 
 Q_SIGNALS:
@@ -113,14 +114,21 @@ private:
   void openGetNewVersionUrl() const;
   void openSettings();
   void openAdvancedSettings();
-  enum class PreferencesTarget { General, Advanced, Keyboard, Connection };
+  enum class PreferencesTarget
+  {
+    General,
+    Advanced,
+    Keyboard,
+    Connection
+  };
   void applyPersonalPreferences(const QVariantMap &changes, PreferencesTarget target);
   void openKeyboardCompatibility();
   void regeneratePersonalCertificate(const QString &path, int bits);
   bool writePersonalPreferences(const QVariantMap &changes, QString *error);
   bool restorePersonalPreferences(const QVariantMap &previous, QString *error);
   bool restoreCertificateFile(QString *error);
-  struct CertificateMaintenance {
+  struct CertificateMaintenance
+  {
     QString path;
     int bits = 2048;
     QByteArray previous;
@@ -131,14 +139,14 @@ private:
   };
   std::optional<CertificateMaintenance> m_certificateMaintenance;
   PreferencesTarget m_preferencesTarget = PreferencesTarget::General;
-  bool m_openLayoutAfterPreferences = false;
   bool m_resetSourceFallbackAfterPreferences = false;
   void setupPersonalUi();
   void openPersonalConnectionOptions();
   void requestPersonalScreenLayout(deskflow::layout::Direction direction);
   void requestPersonalScreenMove(const deskflow::layout::Move &move);
-  void persistPersonalScreenLayout(quint32 requestId, deskflow::layout::Direction expected,
-                                   deskflow::layout::Direction desired);
+  void persistPersonalScreenLayout(
+      quint32 requestId, deskflow::layout::Direction expected, deskflow::layout::Direction desired
+  );
   void persistPersonalScreenMove(quint32 requestId, const deskflow::layout::Move &move);
   bool guardPersonalConfigurationChange();
   void startCore();
@@ -153,7 +161,7 @@ private:
   void coreModeToggled(bool checked);
   void updateModeControls();
   void updateModeControlLabels();
-  std::unique_ptr<Ui::MainWindow> ui;
+  std::unique_ptr<MainWindowState> ui;
 
   void createMenuBar();
   void setupTrayIcon();
@@ -228,7 +236,7 @@ private:
   LogDock *m_logDock;
   StatusBar *m_statusBar = nullptr;
   deskflow::gui::personal::PersonalWindow *m_personalUi = nullptr;
-  QWidget *m_legacyCentral = nullptr;
+  QWidget *m_controllerBindings = nullptr;
   QAction *m_personalTrayStatus = nullptr;
   QAction *m_personalTrayMapping = nullptr;
   QAction *m_personalTrayToggle = nullptr;

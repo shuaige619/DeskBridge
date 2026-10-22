@@ -26,12 +26,19 @@ add_library(${target} STATIC
   Logger.h
   MainWindow.cpp
   MainWindow.h
-  MainWindow.ui
+  MainWindowState.h
   Messages.cpp
   Messages.h
   StyleUtils.h
   personal/PersonalWindow.cpp
   personal/PersonalWindow.h
+  personal/DialogStyle.h
+  personal/ConnectionOptionsDialog.cpp
+  personal/ConnectionOptionsDialog.h
+  personal/ReceiverDeviceControlDialog.cpp
+  personal/ReceiverDeviceControlDialog.h
+  personal/ConnectionIdentity.cpp
+  personal/ConnectionIdentity.h
   personal/AdvancedPage.cpp
   personal/AdvancedPage.h
   personal/PreferenceChanges.cpp
@@ -79,26 +86,19 @@ add_library(${target} STATIC
   dialogs/AboutDialog.ui
   dialogs/ActionDialog.cpp
   dialogs/ActionDialog.h
-  dialogs/ActionDialog.ui
-  dialogs/ClientConfigDialog.h
-  dialogs/ClientConfigDialog.cpp
-  dialogs/ClientConfigDialog.ui
   dialogs/ComputerSettingsDialog.cpp
   dialogs/ComputerSettingsDialog.h
-  dialogs/ComputerSettingsDialog.ui
   dialogs/FingerprintDialog.cpp
   dialogs/FingerprintDialog.h
   dialogs/HelpDialog.cpp
   dialogs/HelpDialog.h
   dialogs/HotkeyDialog.cpp
   dialogs/HotkeyDialog.h
-  dialogs/HotkeyDialog.ui
   dialogs/ServerConfigDialog.cpp
   dialogs/ServerConfigDialog.h
-  dialogs/ServerConfigDialog.ui
-  dialogs/SettingsDialog.cpp
-  dialogs/SettingsDialog.h
-  dialogs/SettingsDialog.ui
+  dialogs/ServerConfigView.h
+  dialogs/EditorViews.h
+  dialogs/SupportViews.h
   ipc/IpcClient.cpp
   ipc/IpcClient.h
   ipc/DaemonIpcClient.cpp
@@ -127,8 +127,6 @@ add_library(${target} STATIC
   validators/IpAddressValidator.h
   widgets/ComputerSetupView.cpp
   widgets/ComputerSetupView.h
-  widgets/FingerprintPreview.cpp
-  widgets/FingerprintPreview.h
   widgets/KeySequenceWidget.cpp
   widgets/KeySequenceWidget.h
   widgets/LogDock.cpp

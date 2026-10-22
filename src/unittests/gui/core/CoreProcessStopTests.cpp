@@ -178,6 +178,73 @@ void CoreProcessStopTests::sourceMetadataResets()
   QVERIFY(process.m_stderrPending.isEmpty());
 }
 
+void CoreProcessStopTests::sourceMetadataIpcStartupReplay()
+{
+  ServerConfig config;
+  const auto binary = QStringLiteral("%1/%2").arg(QCoreApplication::applicationDirPath(), kCoreBinName);
+  if (!QFile::exists(binary))
+    QTest::ignoreMessage(QtCriticalMsg, "core server binary does not exist");
+  CoreProcess process(config);
+  using deskflow::shortcuts::DeviceOS;
+  process.setConnectionState(ConnectionState::Connecting);
+  process.handleLogLines(QStringLiteral("INFO: DeskBridge source OS: linux\nDeskBridge modifier remap: active\n"));
+  QCOMPARE(process.sourceOperatingSystem(), DeviceOS::Linux);
+  QVERIFY(process.serverModifierMapping());
+
+  // The core connects before the GUI IPC handshake. Its queued historical
+  // Connecting message must be followed by ordered metadata, not erase it.
+  process.onCoreIpcMessageReceived("connectionState", "Connecting");
+  QCOMPARE(process.sourceOperatingSystem(), DeviceOS::Unknown);
+  process.onCoreIpcMessageReceived("sourceOperatingSystem", "unknown");
+  process.onCoreIpcMessageReceived("serverModifierMapping", "none");
+  process.onCoreIpcMessageReceived("sourceOperatingSystem", "linux");
+  process.onCoreIpcMessageReceived("serverModifierMapping", "active");
+  process.onCoreIpcMessageReceived("connectionState", "Connected");
+  QCOMPARE(process.sourceOperatingSystem(), DeviceOS::Linux);
+  QVERIFY(process.serverModifierMapping());
+
+  // Buffered output from the older connection cannot overwrite the ordered
+  // IPC snapshot. No actual subprocess or system input is used by this test.
+  process.handleLogLines(QStringLiteral("INFO: DeskBridge source OS: unknown\nDeskBridge modifier remap: none\n"));
+  QCOMPARE(process.sourceOperatingSystem(), DeviceOS::Linux);
+  QVERIFY(process.serverModifierMapping());
+  process.onCoreIpcMessageReceived("connectionState", "Disconnected");
+  QCOMPARE(process.sourceOperatingSystem(), DeviceOS::Unknown);
+  QVERIFY(!process.serverModifierMapping());
+  process.onCoreIpcMessageReceived("connectionState", "Connecting");
+  process.onCoreIpcMessageReceived("sourceOperatingSystem", "windows");
+  process.onCoreIpcMessageReceived("serverModifierMapping", "none");
+  process.onCoreIpcMessageReceived("connectionState", "Connected");
+  QCOMPARE(process.sourceOperatingSystem(), DeviceOS::Windows);
+  QVERIFY(!process.serverModifierMapping());
+  process.handleLogLines(QStringLiteral("INFO: DeskBridge source OS: linux\nDeskBridge modifier remap: active\n"));
+  QCOMPARE(process.sourceOperatingSystem(), DeviceOS::Windows);
+  QVERIFY(!process.serverModifierMapping());
+}
+
+void CoreProcessStopTests::sourceMetadataIpcValidation()
+{
+  ServerConfig config;
+  const auto binary = QStringLiteral("%1/%2").arg(QCoreApplication::applicationDirPath(), kCoreBinName);
+  if (!QFile::exists(binary))
+    QTest::ignoreMessage(QtCriticalMsg, "core server binary does not exist");
+  CoreProcess process(config);
+  using deskflow::shortcuts::DeviceOS;
+  process.onCoreIpcMessageReceived("sourceOperatingSystem", "linux-future");
+  process.onCoreIpcMessageReceived("serverModifierMapping", "true");
+  QVERIFY(!process.m_sourceOperatingSystemFromIpc);
+  QVERIFY(!process.m_serverModifierMappingFromIpc);
+  process.handleLogLines(QStringLiteral("INFO: DeskBridge source OS: macos\nDeskBridge modifier remap: active\n"));
+  QCOMPARE(process.sourceOperatingSystem(), DeviceOS::MacOS);
+  QVERIFY(process.serverModifierMapping());
+  process.onCoreIpcMessageReceived("sourceOperatingSystem", "linux");
+  process.onCoreIpcMessageReceived("serverModifierMapping", "none");
+  process.onCoreIpcMessageReceived("sourceOperatingSystem", "windows\n");
+  process.onCoreIpcMessageReceived("serverModifierMapping", "invalid");
+  QCOMPARE(process.sourceOperatingSystem(), DeviceOS::Linux);
+  QVERIFY(!process.serverModifierMapping());
+}
+
 QTEST_GUILESS_MAIN(CoreProcessStopTests)
 
 void CoreProcessStopTests::layoutServerStopRollsBackPendingApply()

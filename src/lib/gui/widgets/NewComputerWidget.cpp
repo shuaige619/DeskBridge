@@ -22,7 +22,7 @@ NewComputerWidget::NewComputerWidget(QWidget *parent) : QLabel(parent)
 void NewComputerWidget::mousePressEvent(QMouseEvent *)
 {
   //: Used as the hostname. Translation may not contain spaces
-  Computer newComputer(tr("Unnamed"));
+  Computer newComputer(QStringLiteral("new-device"));
 
   QByteArray itemData;
   QDataStream dataStream(&itemData, QIODevice::WriteOnly);
