@@ -1,6 +1,6 @@
 # DeskBridge（桌桥）个人版
 
-桌桥面向 macOS、Windows 和 Linux，用一个 App 处理跨电脑键鼠共享和快捷键适配。Mac 客户端与 Ubuntu 配套服务端已完成首页四方向布局的实连同步验证；Windows 构建与验收状态见 [README-WINDOWS.md](README-WINDOWS.md)。远程布局编辑需要两端运行配套 DeskBridge，无需额外的快捷键转换工具。
+桌桥面向 macOS、Windows 和 Linux，用一个 App 处理跨电脑键鼠共享和快捷键适配。此前版本的 Mac 客户端与 Ubuntu 配套服务端已完成首页四方向布局的实连同步验证；本次发行构建状态以对应 Release 和 Actions 记录为准，Windows 验收范围见 [README-WINDOWS.md](README-WINDOWS.md)。远程布局编辑需要两端运行配套 DeskBridge，无需额外的快捷键转换工具。
 
 ## macOS 界面与可视化映射
 
@@ -190,4 +190,4 @@ macOS 13+ 使用系统 `SMAppService.mainApp`。系统要求批准时，开关�
 
 ## 验证范围
 
-已通过 Mac 与 Ubuntu 配套 DeskBridge 的真实 TLS 连接验证首页四方向拖放、服务端保存同步、双向跨屏、远程复制粘贴、完整快捷键适配与轻按 Shift。三台及以上设备的连通布局、冲突、过期请求、服务端发布及回退通过隔离自动化测试验证；未把两台实机测试表述为多台硬件验收。Windows 的构建和运行验证见 [README-WINDOWS.md](README-WINDOWS.md)。
+此前版本已通过 Mac 与 Ubuntu 配套 DeskBridge 的真实 TLS 连接验证首页四方向拖放、服务端保存同步、双向跨屏、远程复制粘贴、完整快捷键适配与轻按 Shift。三台及以上设备的连通布局、冲突、过期请求、服务端发布及回退有隔离自动化测试覆盖；不将两台实机测试表述为多台硬件验收。本次构建与测试结果以对应 Release 和 Actions 记录为准。Windows 的构建和运行验证范围见 [README-WINDOWS.md](README-WINDOWS.md)。

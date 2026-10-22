@@ -118,6 +118,7 @@ flatpak run local.shuai.deskbridge
 - [Linux 安装、构建与验证范围](README-LINUX.md)
 - [Windows 安装、构建与验证范围](README-WINDOWS.md)
 - [配置文件与数据目录](docs/Configuration.md)
+- [文档索引与功能入口速查](docs/Readme.md)
 - [开发文档](docs/dev/mainpage.md) · [版本记录](CHANGELOG.md) · [安全说明](docs/Security.md)
 
 ## 许可证

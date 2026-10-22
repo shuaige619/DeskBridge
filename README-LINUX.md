@@ -28,7 +28,7 @@ flatpak run local.shuai.deskbridge
 
 [Linux GitHub Actions 工作流](.github/workflows/personal-linux.yml)在 Ubuntu 24.04 runner 上安装 KDE SDK／Platform 6.11，使用 [个人版 Flatpak manifest](deploy/linux/personal-flatpak.yml)编译完整源码、运行隔离回归测试、导出安装包，再独立导入核对包内二进制、依赖及文档。
 
-工作流仅手动运行，不自动发布 Release。将最终代码提交到目标分支后，可在 Actions 运行 **DeskBridge Linux x86_64 package**，或执行：
+工作流支持手动运行；`codex/**` 分支中的源码、Linux 打包、版本或相关文档变更也会触发构建，不自动发布 Release。将最终代码提交到目标分支后，可在 Actions 运行 **DeskBridge Linux x86_64 package**，或执行：
 
 ```bash
 gh workflow run personal-linux.yml --repo shuaige619/DeskBridge --ref main
