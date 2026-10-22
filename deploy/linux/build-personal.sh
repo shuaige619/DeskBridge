@@ -29,6 +29,7 @@ cmake -S "$repo_dir" -B "$build_dir" -G Ninja \
   -DHELP2MAN:FILEPATH= \
   -DDESKBRIDGE_PERSONAL_BUILD=ON -DBUILD_INSTALLER=OFF \
   "-DBUILD_TESTS=$run_tests" -DSKIP_BUILD_TESTS=ON "$@"
+build_dir=$(cd "$build_dir" && pwd)
 build_targets=(DeskBridge deskflow-core app_translations)
 regression_targets=(
   ScreenLayoutTests ScreenLayoutPersistenceTests CoreProcessStopTests
