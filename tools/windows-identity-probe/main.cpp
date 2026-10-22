@@ -59,6 +59,9 @@ QVariantMap applyLikeProduction(const QVariantMap &values)
   require(transaction.status() == QSettings::NoError, QStringLiteral("INI initial sync failed"));
   QVariantMap requested;
   const auto caseChangeWrites = deskflow::settings_detail::caseChangeWrites(values);
+  const QVariant identity = values.value(Settings::Core::ComputerName);
+  const bool changingIdentity = identity.isValid() &&
+                                identity.toString() != transaction.value(Settings::Core::ComputerName).toString();
   // Production trySetValues first filters values against a single unmodified
   // QSettings view, then applies the resulting QString-sorted QVariantMap.
   // Seeded non-default values avoid needing the full preference defaults here.
@@ -66,7 +69,9 @@ QVariantMap applyLikeProduction(const QVariantMap &values)
     const QVariant candidate = it.value();
     const bool changed = transaction.value(it.key()) != candidate;
     const bool existed = transaction.contains(it.key());
-    if (!changed && !caseChangeWrites.contains(it.key()) && (candidate.isValid() ? existed : !existed))
+    const bool restoreComputerValue = changingIdentity && candidate.isValid() && !existed &&
+                                      it.key().startsWith(QStringLiteral("computer_"));
+    if (!changed && !caseChangeWrites.contains(it.key()) && !restoreComputerValue && (candidate.isValid() || !existed))
       continue;
     requested.insert(it.key(), candidate);
   }
