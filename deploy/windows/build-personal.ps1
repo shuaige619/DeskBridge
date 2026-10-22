@@ -50,7 +50,7 @@ function Invoke-Checked([string]$Tool, [string[]]$Arguments) {
 }
 
 function Invoke-IsolatedTests([string]$Directory) {
-    $testRegex = '^(ShortcutRulesTests|ShortcutMapperTests|ShiftTapGestureTests|LoginStartupTests|ShortcutApplyControllerTests|KeyMapTests|KeyStateTests|IKeyStateTests|SettingsTests|ComputerShortcutTests|ServerProxyTests|CoreProcessStopTests|PersonalWindowTests|ShortcutPageTests|ChordRecorderTests|PersonalDialogTests|AdvancedPageTests|PreferenceChangesTests|PreferencesApplyControllerTests|ScreenLayoutPersistenceTests|DeviceIllustrationTests|ScreenLayoutTests|ServerConfigTests|ServerTests|ClientProxyTests|InputTimingMetricsTests|IpcServerAccessTests)$'
+    $testRegex = '^(ShortcutRulesTests|ShortcutMapperTests|ShiftTapGestureTests|LoginStartupTests|ShortcutApplyControllerTests|KeyMapTests|KeyStateTests|IKeyStateTests|SettingsTests|ComputerShortcutTests|ServerProxyTests|CoreProcessStopTests|PersonalWindowTests|ShortcutPageTests|ChordRecorderTests|PersonalDialogTests|AdvancedPageTests|PreferenceChangesTests|PreferencesApplyControllerTests|ScreenLayoutPersistenceTests|DeviceIllustrationTests|ScreenLayoutTests|ServerConfigTests|ServerTests|ClientProxyTests|InputTimingMetricsTests|IpcServerAccessTests|TrayIconTests|ConnectionIdentityTests|ConnectionOptionsDialogTests|EditorDialogTests|ServerSettingsDialogTests|SupportDialogTests|ReceiverDeviceControlDialogTests|HotkeySerializationTests)$'
     if ($DiagnosticsOnly) { $testRegex = '^(ShortcutRulesTests|SettingsTests)$' }
     $environmentBackup = @{}
     foreach ($name in @('QT_QPA_PLATFORM', 'QT_FORCE_STDERR_LOGGING', 'XDG_CONFIG_HOME', 'XDG_STATE_HOME')) {

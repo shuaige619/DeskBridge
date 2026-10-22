@@ -6,6 +6,7 @@
 # temp dirs created during build
 /build
 /dist
+/.local-backups/
 /design/
 /deps
 /tmp

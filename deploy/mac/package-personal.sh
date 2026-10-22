@@ -32,6 +32,7 @@ stage_app="$stage_dir/DeskBridge.app"
 [[ -x $stage_app/Contents/MacOS/DeskBridge && -x $stage_app/Contents/MacOS/deskflow-core ]] || {
   printf 'Expected GUI and core executables were not installed into %s\n' "$stage_app" >&2; exit 1;
 }
+cp "$repo_dir/README.md" "$stage_app/Contents/Resources/README.md"
 cp "$repo_dir/README-PERSONAL.md" "$stage_app/Contents/Resources/README-PERSONAL.md"
 ditto "$repo_dir/LICENSES" "$stage_app/Contents/Resources/LICENSES"
 if [[ -n ${THIRD_PARTY_LICENSE_DIR:-} ]]; then

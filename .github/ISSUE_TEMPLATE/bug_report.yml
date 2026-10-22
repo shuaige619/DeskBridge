@@ -8,7 +8,7 @@ body:
 
         <b>Sanity checks</b>
         > [!IMPORTANT]
-        > 1. Wayland users can consult upstream Deskflow's [known issues](https://github.com/deskflow/deskflow/discussions/7499) for technical reference.
+        > 1. Wayland users should include their desktop environment and whether input-capture and remote-desktop portals are available.
         > 2. macOS users, if the app cannot be opened, see [Apple's guidance](https://support.apple.com/guide/mac-help/open-a-mac-app-from-an-unknown-developer-mh40616/mac).
         > 3. Search for existing issues and avoid creating duplicates.
         > 4. Provide a descriptive title for this issue.

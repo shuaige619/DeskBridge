@@ -5,7 +5,7 @@ set -euo pipefail
 if [[ ${1:-} == --help ]]; then
   printf 'Usage: %s [--test] [build-directory] [extra CMake configure arguments...]\n' "$0"
   printf 'Builds DeskBridge and its core on Linux; does not install or launch them.\n'
-  printf -- '--test also runs isolated layout/protocol regression tests.\n'
+  printf -- '--test also runs isolated connection, UI, layout, protocol and hotkey regression tests.\n'
   exit 0
 fi
 [[ $(uname -s) == Linux ]] || { printf 'This build script requires Linux.\n' >&2; exit 1; }
@@ -30,18 +30,33 @@ cmake -S "$repo_dir" -B "$build_dir" -G Ninja \
   -DDESKBRIDGE_PERSONAL_BUILD=ON -DBUILD_INSTALLER=OFF \
   "-DBUILD_TESTS=$run_tests" -DSKIP_BUILD_TESTS=ON "$@"
 build_targets=(DeskBridge deskflow-core app_translations)
+regression_targets=(
+  ScreenLayoutTests ScreenLayoutPersistenceTests CoreProcessStopTests
+  ServerProxyTests ServerConfigTests ClientProxyTests PacketStreamFilterTests
+  InputTimingMetricsTests ServerTests DeviceIllustrationTests IpcServerAccessTests
+  SettingsTests TrayIconTests ShortcutRulesTests ShortcutMapperTests
+  ShiftTapGestureTests ComputerShortcutTests AdvancedPageTests PreferenceChangesTests
+  PreferencesApplyControllerTests PersonalDialogTests PersonalWindowTests
+  ShortcutPageTests ChordRecorderTests ShortcutApplyControllerTests
+  ConnectionOptionsDialogTests EditorDialogTests ServerSettingsDialogTests
+  SupportDialogTests ConnectionIdentityTests ReceiverDeviceControlDialogTests
+  ComputerTests HotkeySerializationTests
+)
 if [[ $run_tests == ON ]]; then
-  build_targets+=(ScreenLayoutTests ScreenLayoutPersistenceTests CoreProcessStopTests ServerProxyTests ServerConfigTests ClientProxyTests PacketStreamFilterTests InputTimingMetricsTests ServerTests DeviceIllustrationTests IpcServerAccessTests SettingsTests TrayIconTests)
+  build_targets+=("${regression_targets[@]}")
 fi
 cmake --build "$build_dir" --target "${build_targets[@]}" --parallel "${DESKBRIDGE_BUILD_JOBS:-$(getconf _NPROCESSORS_ONLN)}"
 if [[ $run_tests == ON ]]; then
   command -v python3 >/dev/null || { printf 'Missing test dependency: python3\n' >&2; exit 1; }
   test_state=$(mktemp -d "${TMPDIR:-/tmp}/deskbridge-linux-tests.XXXXXX")
   trap 'rm -rf -- "$test_state"' EXIT
-  XDG_CONFIG_HOME="$test_state/config" XDG_STATE_HOME="$test_state/state" QT_QPA_PLATFORM=offscreen \
+  mkdir -m 700 "$test_state/runtime"
+  test_pattern=$(IFS='|'; printf '%s' "${regression_targets[*]}")
+  XDG_CONFIG_HOME="$test_state/config" XDG_STATE_HOME="$test_state/state" \
+    XDG_RUNTIME_DIR="$test_state/runtime" QT_QPA_PLATFORM=offscreen \
     ctest --test-dir "$build_dir/src/unittests" --no-tests=error \
-    -R '^(ScreenLayoutTests|ScreenLayoutPersistenceTests|CoreProcessStopTests|ServerProxyTests|ServerConfigTests|ClientProxyTests|PacketStreamFilterTests|InputTimingMetricsTests|ServerTests|DeviceIllustrationTests|IpcServerAccessTests|SettingsTests|TrayIconTests)$' --output-on-failure
-  python3 -m unittest discover -s "$repo_dir/tools" -p 'test_prepare_personal_server.py' -v
+    -R "^($test_pattern)$" --output-on-failure --output-junit "$build_dir/linux-regressions.xml"
+  python3 -m unittest discover -s "$repo_dir/tools" -p 'test_prepare_personal_*.py' -v
 fi
 printf '\nBuilt: %s/bin/DeskBridge\nCore: %s/bin/deskflow-core\n' "$build_dir" "$build_dir"
 printf 'Installation is a separate step; see README-LINUX.md.\n'
