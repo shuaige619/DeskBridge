@@ -132,6 +132,40 @@ private Q_SLOTS:
     QVERIFY(save->isEnabled());
     QCOMPARE(dialog.changes().value(Settings::Core::ComputerName).toString(), QStringLiteral("MY-MAC"));
   }
+
+  void externalSourceIdentityRequiresAnExplicitConfigUpdate_data()
+  {
+    QTest::addColumn<Settings::CoreMode>("mode");
+    QTest::addColumn<QString>("name");
+    QTest::addColumn<bool>("allowed");
+    QTest::newRow("source-renamed") << Settings::Server << QStringLiteral("renamed") << false;
+    QTest::newRow("source-case-only") << Settings::Server << QStringLiteral("MY-MAC") << true;
+    QTest::newRow("receiver-renamed") << Settings::Client << QStringLiteral("renamed") << true;
+  }
+
+  void externalSourceIdentityRequiresAnExplicitConfigUpdate()
+  {
+    QFETCH(Settings::CoreMode, mode);
+    QFETCH(QString, name);
+    QFETCH(bool, allowed);
+    Settings::setValue(Settings::Server::ExternalConfig, true);
+    Settings::save(false);
+    const auto before = settingsBytes();
+    ConnectionOptionsDialog dialog;
+    dialog.findChild<QComboBox *>(QStringLiteral("personalComputerRole"))->setCurrentIndex(
+        dialog.findChild<QComboBox *>(QStringLiteral("personalComputerRole"))->findData(mode)
+    );
+    dialog.findChild<QLineEdit *>(QStringLiteral("connectionComputerName"))->setText(name);
+    auto *save = dialog.findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Save);
+    QCOMPARE(save->isEnabled(), allowed);
+    if (!allowed) {
+      auto *error = dialog.findChild<QLabel *>(QStringLiteral("connectionValidation"));
+      QVERIFY(error->text().contains(QStringLiteral("外部配置")));
+      QVERIFY(error->text().contains(QStringLiteral("内置配置")));
+    }
+    dialog.reject();
+    QCOMPARE(settingsBytes(), before);
+  }
   void captureRedesignedPages()
   {
     const auto directory = qEnvironmentVariable("DESKBRIDGE_UI_CAPTURE_DIR");

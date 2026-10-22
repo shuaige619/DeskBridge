@@ -152,6 +152,9 @@ void ConnectionOptionsDialog::refresh()
     error = tr("设备名称须以字母或数字开头和结尾。");
   else if (m_otherNames.contains(name, Qt::CaseInsensitive))
     error = tr("已有另一台设备使用此名称，请更换名称。");
+  else if (server && Settings::value(Settings::Server::ExternalConfig).toBool() &&
+           name.compare(m_baseline.value(Settings::Core::ComputerName).toString(), Qt::CaseInsensitive) != 0)
+    error = tr("当前使用外部配置。请先切回内置配置再修改本机名称，并同步更新外部配置中的设备名称。");
   else if (!server && m_host->text().trimmed().isEmpty())
     error = tr("请填写来源电脑的 IP 地址或主机名。");
   m_error->setText(error);

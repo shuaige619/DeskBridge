@@ -1038,6 +1038,11 @@ void MainWindow::applyPersonalPreferences(const QVariantMap &changes, Preference
       report(error.isEmpty() ? tr("连接角色或来源地址无效。") : error);
       return;
     }
+    if (mode == CoreMode::Server && Settings::value(Settings::Server::ExternalConfig).toBool() &&
+        name.compare(Settings::value(Settings::Core::ComputerName).toString(), Qt::CaseInsensitive) != 0) {
+      report(tr("当前使用外部配置。请先切回内置配置再修改本机名称，并同步更新外部配置中的设备名称。"));
+      return;
+    }
   }
   if (!Settings::isWritable() || !personal::validatePreferenceChanges(ordinary, &error)) {
     report(error.isEmpty() ? tr("设置文件为只读，无法应用更改。") : error);

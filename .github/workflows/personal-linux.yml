@@ -4,6 +4,16 @@ name: DeskBridge Linux x86_64 package
 
 on:
   workflow_dispatch:
+  push:
+    branches: ["codex/**"]
+    paths:
+      - "src/**"
+      - "deploy/linux/**"
+      - "CMakeLists.txt"
+      - "VERSION"
+      - "README*.md"
+      - "docs/**"
+      - ".github/workflows/personal-linux.yml"
 
 permissions:
   contents: read
