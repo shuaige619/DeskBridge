@@ -1,644 +1,113 @@
-# GUI Config
+# DeskBridge 配置参考
 
- Deskflow will automatically figure out where to save settings and other files.
+日常连接请通过桌桥界面配置，完整操作见[使用 README](../README.md)。本文说明个人版的数据目录、常用配置键和共享核心配置，便于备份及排查问题。
 
-## Search paths
+## 配置与数据目录
 
-Deskflow will look for settings in several places depending on your operating system.
-The search order for a setting file depends on your operating system
+| 环境 | 设置文件 |
+| --- | --- |
+| macOS | `~/Library/DeskBridge/DeskBridge.conf` |
+| Linux 原生运行 | `~/.config/DeskBridge/DeskBridge.conf` |
+| Linux Flatpak | `~/.var/app/local.shuai.deskbridge/config/DeskBridge/DeskBridge.conf` |
+| Windows 安装版／便携发行包 | `<安装或解压目录>/settings/DeskBridge.conf` |
+| Windows 原生运行且无 portable 标记 | `%APPDATA%/DeskBridge/DeskBridge.conf` |
 
-### Linux
+设置了 `XDG_CONFIG_HOME` 时，应用优先使用 `$XDG_CONFIG_HOME/DeskBridge/DeskBridge.conf`，适用于隔离测试配置。用户路径没有配置时，macOS、Linux 还会检查 `/Library/DeskBridge/DeskBridge.conf`、`/etc/DeskBridge/DeskBridge.conf` 等系统路径；Windows 检查 `C:/ProgramData/DeskBridge/DeskBridge.conf`。实际加载路径会输出到启动日志。
 
-  1. `<XDG_CONFIG_HOME>/Deskflow/Deskflow.conf`
-  2. `~/.config/Deskflow/Deskflow.conf`
-  3. `/etc/Deskflow/Deskflow.conf`
- 
-A new settings file will be created in the user path if no settings file is found.
-The path of the settings file will be used as the base for all other config files.
+TLS 证书、私钥及信任数据库位于配置目录的 `tls/`；Windows 无 portable 标记时 TLS 数据使用系统数据目录。全新个人版默认使用 `tls/deskbridge.pem`。升级继续使用已经选定的证书路径，不能仅因文件名与新默认值不同就删除或重建证书。日志路径可在“高级”中配置。
 
-### macOS
- 
-  1. `~/Library/Deskflow/Deskflow.conf`
-  2. `/Library/Deskflow/Deskflow.conf`
- 
-A new settings file will be created in the user path if no settings file is found.
-The path of the settings file will be used as the base for all other config files.
+Windows 发行包中的 `settings/DeskBridge.conf` 同时是桌面进程模式标记，请保留。配置文件与证书需一起备份；备份含私钥和已信任设备信息，应保存在自己的受限目录中。退出应用后再做文件级备份或恢复。
 
-### Windows
+窗口位置等状态存放在 Qt 的状态目录下的 `DeskBridge.state`，可用 `XDG_STATE_HOME` 隔离；portable 模式的状态键随设置保存。清除窗口状态不等于重置连接、快捷键或证书。
 
-  1. `<install-path>/settings/Deskflow.conf`
-  2. Windows Registry `HKCU\Software\Deskflow\Deskflow`
+## 常用设置键
 
-Windows will save to the install dir if settings are loaded from there. If not, it saves any other config files in: `C:\ProgramData\Deskflow\`
+设置为 QSettings INI 格式，键名通常表示为 `section/option`。例如：
 
-When using settings from the install dir, the service mode will not be available.
+```ini
+[core]
+computerName=macbook
+coreMode=1
+port=24800
 
-## Valid GUI Keys
+[client]
+remoteHost=192.168.1.20
 
-The GUI config file contains several sections.
-Each section is formatted the same.
-Option-value pairs are only written if the value is not the default value.
-
-```
-[section]
-option=value
+[security]
+tlsEnabled=true
+checkPeerFingerprints=true
 ```
 
-### Client
+这是接收端设置片段，不能替代来源端设备布局。界面修改一般先保存为草稿，按“应用更改”才写入文件；连接核心相关设置会按需重新连接。手动编辑前退出应用，避免正在运行的界面覆盖文件。
 
-This section contains options used when in client mode. 
-It will begin with `[client]`
+| 键 | 类型／默认值 | 用途 |
+| --- | --- | --- |
+| `core/computerName` | 字符串，初始取本机名称 | 本机设备身份，必须与来源端布局中的名称或别名匹配 |
+| `core/coreMode` | `0` 未选择、`1` 接收端、`2` 来源端 | 共享角色 |
+| `core/port` | 整数，`24800` | 两端使用一致的 TCP 端口 |
+| `core/interface` | IP 地址，空值自动选择 | 来源端监听地址 |
+| `core/preventSleep` | 布尔值 | 共享核心运行时防止本机休眠 |
+| `client/remoteHost` | IP 地址或主机名 | 来源端地址，可用逗号分隔候选地址 |
+| `client/dynamicConnectionInterval` | 布尔值，默认 `false` | 连接失败时逐步延长重试间隔；关闭后仍会重试 |
+| `client/invertYScroll`、`client/invertXScroll` | 布尔值，默认 `false` | 接收端远程滚动方向 |
+| `client/yScrollScale`、`client/xScrollScale` | 小数，默认 `1.0` | 接收端滚动速度 |
+| `client/shortcutConfig` | JSON 字符串 | 接收端快捷键规则、应用范围及输入法手势，当前保存 schema 4 |
+| `gui/startCoreWithGui` | 布尔值 | 打开应用时自动开始共享 |
+| `gui/autoHide` | 布尔值 | 启动时隐藏主窗口 |
+| `gui/closeToTray` | 布尔值 | 关闭窗口后继续在菜单栏／托盘运行 |
+| `gui/showVersionInTitle` | 布尔值 | 在标题显示版本 |
+| `security/tlsEnabled` | 布尔值，默认 `true` | TLS 加密 |
+| `security/checkPeerFingerprints` | 布尔值，默认 `true` | 核对并信任对端指纹 |
+| `security/certificate` | 文件绝对路径 | 本机证书及私钥文件 |
+| `security/keySize` | `2048` 或 `4096`，默认 `2048` | 新建证书的密钥长度；更改偏好不会隐式重建证书 |
+| `log/level` | 日志级别，默认 `INFO` | 基础日志级别 |
+| `log/guiDebug` | 布尔值 | GUI 调试日志 |
+| `log/toFile`、`log/file` | 布尔值、文件路径 | 是否保存日志及目标位置 |
 
-| Option                    |    Valid Values    | Description |
-|:--------------------------|:------------------:|:-----------|
-| dynamicConnectionInterval | `true` or `false`  | Use dynamic connection retry times based on number of previously failed attempts [default: false] |
-| languageSync              | `true` or `false`  | Sync to server language [default: true] |
-| remoteHost                | `IP` or `hostname` | The remote host(s) to connect to. Use a comma separated list when you want to try several hosts |
-| yScrollScale              | Double 0.1 - 10.0  | Vertical mouse scrolling will be scaled by this amount on the client [default: 1.0] |
-| xScrollScale              | Double 0.1 - 10.0  | Horizontal mouse scrolling will be scaled by this amount on the client [default: 1.0] |
-| invertYScroll             | `true` or `false`  | Invert vertical scroll on this client [default: false] |
-| invertXScroll             | `true` or `false`  | Invert horizontal scroll on this client [default: false] |
+Mac 的登录启动由系统登录项管理，独立于 `gui/startCoreWithGui`。更新检查与 Windows 系统服务不是当前个人发行包的常规设置，不应通过旧配置示例启用。
 
-### Core
+## 来源端布局与共享行为
 
-This section contains general options it will begin with `[core]`
+来源端的“管理设备与控制…”提供设备布局、控制热键、共享行为、连接与配置四页。常用键包括：
 
-|Option         | Valid Values|Description|
-|:--------------|:-----------:|:-----------|
-| coreMode      | `0` or `1` or `2` | The mode to start in 0: None, 1: Client, 2: Server [default: 0]|
-| display       |  int              | The XWindow display to use [default: autodetected] |
-| interface     | IP Address        | Preferred IP to use for network communication. By default the server board casts on any available address |
-| lastVersion   | M.m.p.t           | The version last run used for checking for updates |
-| port          | port #            | Port to use when connecting [default: 24800 |
-| preventSleep  | `true` or `false` | Prevent sleep when Deskflow is active [default: false] |
-| processMode   | `1` or `0`        | The mode we use to start the process Service or Desktop |
-| computerName  | string            | Name used to identify the computer [default: machine's hostname] |
-| useHooks      | `true` or `false` | If Windows uses hooks or not [default: true] |
-| language      | 639 language      | The language to display the GUI in [default: en] |
-| enableEnterCommand | `true` or `false` | Should the enter command be triggered when the computer is entered [defaut: false] |
-| enterCommand  | command | A command to run when the computer is entered. |
-| enableExitCommand | `true` or `false` | Should the exit command be triggered when the computer is exited [defaut: false] |
-| exitCommand  | command | A command to run when the computer is exited. |
+| 键 | 默认值／说明 |
+| --- | --- |
+| `server/gridWidth`、`server/gridHeight` | 默认 `5`、`3`，决定图形布局网格容量 |
+| `server/enableClipboard` | 是否共享剪贴板 |
+| `server/clipboardSize` | 默认 `3` MiB，由来源端控制剪贴板大小限制 |
+| `server/enableSwitchDelay`、`server/switchDelay` | 是否启用边缘停留切屏及等待毫秒数，默认数值 `250` |
+| `server/enableSwitchDoubleTap`、`server/switchDoubleTap` | 是否启用双击边缘切屏及间隔毫秒数，默认数值 `250` |
+| `server/disableLockToComputer` | 是否禁用默认 Scroll Lock 锁定切屏功能 |
+| `server/defaultLockToComputerState` | 切换后默认锁定光标的状态 |
+| `server/relativeMouseMoves` | 光标锁定时使用相对鼠标移动 |
+| `server/protocol` | `barrier`（默认）或 `synergy`，两端需兼容 |
+| `server/externalConfig` | 是否从外部文件读取来源端配置 |
+| `server/externalConfigFile` | 外部配置文件路径 |
 
-### Daemon
+图形设备和热键数据位于 `[internalConfig]`；单个设备的兼容设置位于 `[computer_设备名]`。这些数据有数组及索引关系，建议通过完整编辑器保存或导出，不直接修改单个索引。
 
-This section contains options used by the daemon on windows it will begin with `[daemon]`
+首页编辑只支持可表示为完整相邻连通网格的布局。外部文件、部分边缘映射或其他复杂链接可能只读；完整编辑入口仍可查看和导出。导出不会隐式保存尚未应用的草稿。
 
-|Option | Valid Values|Description|
-|:----------|:-----------:|:-----------|
-| command   | Filename          | The filename of the binary the daemon. This binary exists in the same path as the deskflow GUI |
-| elevate   | `true` or `false` | Elevate the daemon app [default: true unless portable mode ] |
-| logFile   | Filepath          | Filepath of the daemon log |
-| logLevel  | valid log Level,  | Log Level  |
+## 共享核心配置文件
 
-### GUI
+GUI 根据布局生成核心配置；外部配置使用共享核心的文本格式，区别于上面的 INI。下面表示 `macbook` 位于 `linux-pc` 右侧，两侧可互相返回：
 
-This section contains options used by the GUI it will begin with `[gui]`
-
-|Option                          | Valid Values      |Description|
-|:-------------------------------|:-----------------:|:-----------|
-| autoHide                       | `true` or `false` | When true the app will hide itself on start up [default: false] |
-| enableUpdateCheck              | `true` or `false` | When true check the update URL to see if a new version was released on start up [default: false] |
-| closeReminder                  | `true` or `false` | Used to track if we have shown the reminder that when you close the app it remain running in the background  [default: true]|
-| closeToTray                    | `true` or `false` | When `true` the gui will run in the systemTray when its closed [default: true] |
-| logExpanded                    | `true` or `false` | Should the log section of the GUI be opened [default: false] |
-| symbolicTrayIcon               | `true` or `false` | When true use the monocolor (symbolic) icon false uses a colorful icon for the tray [default: true] |
-| showGenericClientFailureDialog | `true` or `false` | When `true` client connection errors will not show popup error messages [default: true] |
-| shownFirstConnectedMessage     | `true` or `false` | When `true` GUI has shown the user the message for connecting the first time [default: false] |
-| shownServerFirstStartMessage   | `true` or `false` | When `true` GUI has shown the user the Deskflow server is now running message [default: false] |
-| shownVerionInTitle             | `true` or `false` | When `true` GUI will include the version in the window title [default: false] |
-| startCoreWithGui               | `true` or `false` | When true the Core will be started with the GUI. It is set to the Core's state on exit. |
-| updateCheckUrl                 | URL               | The URL to use when checking for a new version number, it should return a version [default: https://api.deskflow.org/version]|
-
-### Log
-
-This section contains options used by the application logging it will begin with `[log]`
-
-|Option    |    Valid Values   |Description|
-|:---------|:-----------------:|:-----------|
-| file     | Filepath          | The file to write the log into |
-| level    | Valid log level   | Log level to use |
-| toFile   | `true` or `false` | When true the log will be written to the value of the `file` option |
-| guiDebug | `true` or `false` | When true the log will show the Gui's internal debug messages |
-
-### Security
-
-This section contains options used by the application security it will begin with `[security]`
-
-|Option                 |   Valid Values    |Description|
-|:----------------------|:-----------------:|:-----------|
-| checkPeerFingerprints | `true` or `false` | When true peers will have their fingerprints confirmed by the user and stored [default: true] |
-| certificate           | Filepath          | Path to the certificate to use to encrypt messages.|
-| keySize               | `2048` OR `4096`  | Size of the TLS key to use [default: 2048]| 
-| tlsEnabled            | `true` or `false` | Are we using TLS encryption when communicating [default: true].|
-
-### Server
-
-This section contains options used when in server mode it will begin with `[server]`
-
-|Option              |    Valid Values   |Description|
-|:-------------------|:-----------------:|:-----------|
-| clipboardSize      | int > 0           | Deskflow will send a maximum of `N` megabytes of clipboard data to another computer when the mouse transitions to that computer. Clients use the server's value for both sending and receiving.|
-| defaultLockToComputerState| `true` or `false` | When this is true the cursor is locked to the new computer when switching (default: false)|
-| disableLockToComputer| `true` or `false` | If false pressing scroll lock will toggle your cursor to be locked to current computer. (default: false) |
-| enableClipboard    | `true` or `false` | When `true` the clipboard will be shared with all clients If set to ''true'' then clipboard shared and the ''clipboardSharingSize'' setting will be used. If set to false, then clipboard sharing will be disabled and the the ''clipboardSharingSize'' setting will be ignored.|
-| enableHeartbeat    | `true` or `false` | Send a heartbeat to connected clients; this has been replaced by internal keep alive (default: false)|
-| enableSwitchDelay  | `true` or `false` | Switching will be delayed by the set value (default: false)|
-| enableSwitchDoubleTap  | `true` or `false` | Enables the doubletap to switch method (default: false)|
-| externalConfig     | `true` or `false` | When true use the external config path |
-| externalConfigFile | Filepath          | Path the server config file if it does not exist the GUI will it generated based on the `internalConfig` section.|
-| gridHeight         | int               | Height of the server's intenal grid used for the computer layout (default: 3)|
-| gridWidth          | int               | Width of the server's intenal grid used for the computer layout (default: 5) |
-| heartbeat          | int               | The server will expect each client to send a message no less than every `N` milliseconds. If no message arrives from a client within `3N` seconds the server forces that client to disconnect. If deskflow fails to detect clients disconnecting while the server is sleeping or vice versa, try using this option.|
-| protocol           | `barrier` or `synergy` | The protocol to use when saying hello to clients. Can be set to barrier or synergy. If not set barrier is used as the default |
-|relativeMouseMoves  | `true` or `false` | If set to ''true'' then secondary computers move the mouse using relative rather than absolute mouse moves when and only when the cursor is locked to the computer (by ''Scroll Lock'' or a configured hot key). This is intended to make Deskflow work better with certain games. If set to ''false'' or not set then all mouse moves are absolute.|
-| switchDelay        | int               | Deskflow won't switch computers when the mouse reaches edge of a computer unless it stays on the edge for `N` milliseconds. This helps prevent unintentional switching when working near an edge. (default: 250)|
-| switchDoubleTap    | int               | Deskflow won't switch computers when the mouse reaches the edge of a computer unless it's moved away from the edge and then back to the edge within `N` milliseconds. With the option you have to quickly tap the edge twice to switch. This helps prevent unintentional switching when working near the edge.|
-|win32KeepForeground | `true` or `false` | If set to ''true'' (the default), Deskflow will grab the foreground focus on a Windows server (thereby putting all other windows in the background) upon switching to a client. If set to ''false'', it will leave the currently foreground window in the foreground. Deskflow grabs the focus to avoid issues with other apps interfering with Deskflow's ability to read the hardware inputs. |
-
- - You can use both the ''switchDelay'' and ''switchDoubleTap'' options at the same time. Deskflow will switch when either requirement is satisfied.
-
-### Computer Settings
-
-Each computer will have a section where its configuration will be stored, if the computer was named "foo" the section will be named `[computer_foo]`
-
-|Option                  |    Valid Values   |Description|
-|:-----------------------|:-----------------:|:-----------|
-| aliases                | Comma separated list of hostnames | Names here will be used as alternatives for the computer. Names must be valid hostnames. |
-| name                   | Valid hostname    | The name of the client. |
-| halfDuplexCapsLock     | `true` or `false` | This computer has a ''Caps Lock'' key that doesn't report a press and a release event when the user presses it but instead reports a press event when it's turned on and a release event when it's turned off. If ''Caps Lock'' acts strangely on all computers then you may need to set this option to true on the server. If it acts strangely on one computer then that computer may need the option set to true.|
-| halfDuplexNumLock      | `true` or `false` | This computer has a ''Num Lock'' key that doesn't report a press and a release event when the user presses it but instead reports a press event when it's turned on and a release event when it's turned off. If ''Num Lock'' acts strangely on all computers then you may need to set this option to true on the server. If it acts strangely on one computer then that computer may need the option set to true.|
-| halfDuplexScrollLock   | `true` or `false` | This computer has a ''Scroll Lock'' key that doesn't report a press and a release event when the user presses it but instead reports a press event when it's turned on and a release event when it's turned off. If ''Scroll Lock'' acts strangely on all computers then you may need to set this option to true on the server. If it acts strangely on one computer then that computer may need the option set to true.|
-| modifierAlt             | `shift` `ctrl` `alt` `altgr` `meta` `super` or  `none` | Map the server's alt modifer to different key on this computer|
-| modifierAltGr           | `shift` `ctrl` `alt` `altgr` `meta` `super` or  `none` | Map the server's altgr modifer to different key on this computer|
-| modifierCtrl            | `shift` `ctrl` `alt` `altgr` `meta` `super` or  `none` | Map the server's ctrl modifer to different key on this computer|
-| modifierMeta            | `shift` `ctrl` `alt` `altgr` `meta` `super` or  `none` | Map the server's meta modifer to different key on this computer|
-| modifierShift           | `shift` `ctrl` `alt` `altgr` `meta` `super` or  `none` | Map the server's shift modifer to different key on this computer|
-| modifierSuper           | `shift` `ctrl` `alt` `altgr` `meta` `super` or  `none` | Map the server's super modifer to different key on thist computer|
-| switchCornerSize       | integer (N)       | Sets the size of all corners in pixels. The cursor must be within `N` pixels of the corner to be considered to be in the corner.|
-| switchCornerTopLeft    | `true` or `false` | Deskflow won't switch computers when the mouse reaches the edge of the computer if it includes this corner. The size of the corner is given by the `switchCornerSize` option. |
-| switchCornerTopRight   | `true` or `false` | Deskflow won't switch computers when the mouse reaches the edge of the computer if it includes this corner. The size of the corner is given by the `switchCornerSize` option. |
-| switchCornerBottomLeft | `true` or `false` | Deskflow won't switch computers when the mouse reaches the edge of the computer if it includes this corner. The size of the corner is given by the `switchCornerSize` option. |
-| switchCornerBottomRight| `true` or `false` | Deskflow won't switch computers when the mouse reaches the edge of the computer if it includes this corner. The size of the corner is given by the `switchCornerSize` option. |
-| xtestIsXineramaUnaware | `true` or `false` | This option works around a bug in the XTest extension when used in combination with Xinerama. It affects X11 clients only. Not all versions of the XTest extension are aware of the Xinerama extension. As a result, they do not move the mouse correctly when using multiple Xinerama screens. This option is currently ''true'' by default. If you know your XTest extension is Xinerama aware then set this option to ''false''.|
-| weakX11Focus           | `true` or `false` | This X11 Client will not gain focus until an input event has been processed its any of its screens |
-
-### InternalConfig
-
-This section contains options used when in server mode it will begin with `[internalConfig]`
-block of a server config file as seen below. This section is used by the GUI to generate a server configuration
-
-```
-[internalConfig]
-hotkeys\1\actions\1\activeOnRelease=false
-hotkeys\1\actions\1\hasScreens=true
-hotkeys\1\actions\1\keys\1\key=83
-hotkeys\1\actions\1\keys\size=1
-hotkeys\1\actions\1\lockCursorToScreen=0
-hotkeys\1\actions\1\restartServer=false
-hotkeys\1\actions\1\switchInDirection=0
-hotkeys\1\actions\1\switchScreenName=void
-hotkeys\1\actions\1\type=0
-hotkeys\1\actions\1\typeScreenNames\size=0
-hotkeys\1\actions\size=1
-hotkeys\1\keys\1\key=83
-hotkeys\1\keys\size=1
-hotkeys\size=1
-screens\1\name=
-screens\10\name=null
-screens\11\name=
-screens\12\name=
-screens\13\name=
-screens\14\name=
-screens\15\name=
-screens\2\name=
-screens\3\name=
-screens\4\name=
-screens\5\name=
-screens\6\name=
-screens\7\name=void
-screens\8\name=chris-Precision-5570
-screens\9\name=abyss.lan
-screens\size=15
-```
-
-
-# Server Config
-
-The `deskflow-server` command accepts the `-c` or `--config` option, which takes one argument,
-the path to a server configuration file. When using the GUI the `internalConfig` section of the GUI settings will be exported as the server configuration.
-The configuration file is plain text and case-sensitive. The file is broken into sections, and each section has the form:
-```
-section: ''name''
-	''arg'' = ''value''
+```text
+section: screens
+    linux-pc:
+    macbook:
 end
-```
-
-Comments are introduced by ''#'' and continue to the end of the line. ''name'' must be one of the following:
-
-* ''links''
-* ''options''
-
-The file is parsed top to bottom and names cannot be used before they've been defined in the general config or as an alias in the general config.
-
-### links secion
-
-''args'' is a list of computer names just like in the ''screens'' section except each computer is followed by a list of links, one per line. Each link has the form:
-```
- {left|right|up|down}[<range>] = name[<range>]
-```
-
-A link indicates which computer is adjacent in the given direction.
-
-Each side of a link can specify a range which defines a portion of an edge. A range on the direction is the portion of edge you can leave from while a range on the computer is the portion of edge you'll enter into. Ranges are optional and default to the entire edge. All ranges on a particular direction of a particular computer must not overlap.
-
-A ''range'' is written as <code>(start,end)</code>. Both ''start'' and ''end'' are percentages in the range 0 to 100, inclusive. The start must be less than the end. 0 is the left or top of an edge and 100 is the right or bottom. 
-
-```
-section: links
-	moe:
-		right        = larry
-		up(50,100)   = curly(0,50)
-	larry:
-		left         = moe
-		up(0,50)     = curly(50,100)
-	curly:
-		down(0,50)   = moe
-		down(50,100) = larry(0,50)
-end
-```
-
-This indicates that computer ''larry'' is to the right of computer ''moe'' (so moving the cursor off the right edge of ''moe'' would make it appear at the left edge of ''larry''), the left half of curly is above the right half of ''moe'', ''moe'' is to the left of ''larry'' (edges are not necessarily symmetric so you have to provide both directions), the right half of curly is above the left half of ''larry'', all of ''moe'' is below the left half of ''curly'', and the left half of ''larry'' is below the right half of ''curly''.
-
-Note that links do not have to be symmetrical; for instance, here the edge between ''moe'' and ''curly'' maps to different ranges depending on if you're going up or down. In fact links don't have to be bidirectional. You can configure the right of ''moe'' to go to ''larry'' without a link from the left of ''larry'' to ''moe''. It's possible to configure a computer with no outgoing links; the cursor will get stuck on that computer unless you have a hot key configured to switch off of that computer.
-
-### options section
-
-''args'' is a list of lines of the form <code>name = value</code>. These set the global options.
-
-```
-section: options
-        name = value
-end
-```
-
-#### List of options allowed in options section
-
-| Options | Value Values| Description|
-|:--------|:-----------:|:-----------|
-|screenSaverSync| `true` or `false`| ''Note: Removed in v1.14.1'' If set to ''false'' then Deskflow won't synchronize screen savers. Client screen savers will start according to their individual configurations. The server screen saver won't start if there is input, even if that input is directed toward a client computer.|
-|keystroke(key) | actions | Binds the ''key'' combination key to the given ''actions''. ''key'' is an optional list of modifiers (''shift'', ''control'', ''alt'', ''meta'' or ''super'') optionally followed by a character or a key name, all separated by + (plus signs). You must have either modifiers or a character/key name or both. See below for `valid key names` and `actions`. Keyboard hot keys are handled while the cursor any computer. Separate actions can be assigned to press and release.|
-|mousebutton(button) | actions| Binds the modifier and mouse button combination ''button'' to the given ''actions''. ''button'' is an optional list of modifiers (''shift'', ''control'', ''alt'', ''meta'' or ''super'') followed by a button number. The primary button (the left button for right handed users) is button 1, the middle button is 2, etc. Actions can be found below. Mouse button actions are not handled while the cursor is on the server. You cannot use these to perform an action while on the server. Separate actions can be assigned to press and release.|
-
-##### Actions
-
-Actions are two lists of individual actions separated by commas. The two lists are separated by a '';'' (semicolon). Either list can be empty and if the second list is empty then the semicolon is optional. The first list lists actions to take when the condition becomes true (e.g. the hot key or mouse button is pressed) and the second lists actions to take when the condition becomes false (e.g. the hot key or button is released). The condition becoming true is called activation and becoming false is called deactivation. Allowed individual actions are:
-
-* `keystroke(key[,computers])`
-
-* `keyDown(key[,computers])`
-
-* `keyUp(key[,computers])`
-
-
-: Synthesizes the modifiers and key given in ''key'' which has the same form as described in the ''keystroke'' option. If given, ''computers'' lists the computer or computers to direct the event to, regardless of the active computer. If not given then the event is directed to the active computer only.
-: ''keyDown'' synthesizes a key press and ''keyUp'' synthesizes a key release. ''keystroke'' synthesizes a key press on activation and a release on deactivation and is equivalent to a ''keyDown'' on activation and ''keyUp'' on deactivation.
-: ''computers'' is either ''*'' (asterisk) to indicate all computers or a '':'' (colon) separated list of computer names. (Note that the computer name must have already been encountered in the configuration file so you'll probably want to put ''actions'' at the bottom of the file.)
-
-* `mousebutton(button)`
-* `mouseDown(button)`
-* `mouseUp(button)`
-: Synthesizes the modifiers and mouse button given in ''button'' which has the same form as described in the ''mousebutton'' option.
-: ''mouseDown'' synthesizes a mouse press and ''mouseUp'' synthesizes a mouse release. ''mousebutton'' synthesizes a mouse press on activation and a release on deactivation and is equivalent to a ''mouseDown'' on activation and ''mouseUp'' on deactivation.
-
-* `lockCursorToScreen(mode)`
-: Locks the cursor to or unlocks the cursor from the active computer. ''mode'' can be ''off'' to unlock the cursor, ''on'' to lock the cursor, or ''toggle'' to toggle the current state. The default is ''toggle''. If the configuration has no ''lockCursorToScreen'' action and ''Scroll Lock'' is not used as a hot key then ''Scroll Lock'' toggles cursor locking.
-
-* `switchToScreen(computerName)`
-: Jump to computer with name or alias ''computerName''.
-
-* `switchInDirection(dir)`
-: Switch to the computer in the direction ''dir'', which may be one of ''left'', ''right'', ''up'' or ''down''.
-
-* `switchToNextScreen()`
-: Cycle to the next computer in the configuration order. If at the last computer, cycles back to the first computer.
-
-##### Keynames
-Valid key names are:
-
-* AppMail
-* AppMedia
-* AppUser1
-* AppUser2
-* AudioDown
-* AudioMute
-* AudioNext
-* AudioPlay
-* AudioPrev
-* AudioStop
-* AudioUp
-* BackSpace
-* Begin
-* Break
-* Cancel
-* CapsLock
-* Clear
-* Delete
-* Down
-* Eject
-* End
-* Escape
-* Execute
-* F1
-* F2
-* F3
-* F4
-* F5
-* F6
-* F7
-* F8
-* F9
-* F10
-* F11
-* F12
-* F13
-* F14
-* F15
-* F16
-* F17
-* F18
-* F19
-* F20
-* F21
-* F22
-* F23
-* F24
-* F25
-* F26
-* F27
-* F28
-* F29
-* F30
-* F31
-* F32
-* F33
-* F34
-* F35
-* Find
-* Help
-* Home
-* Insert
-* KP_0
-* KP_1
-* KP_2
-* KP_3
-* KP_4
-* KP_5
-* KP_6
-* KP_7
-* KP_8
-* KP_9
-* KP_Add
-* KP_Begin
-* KP_Decimal
-* KP_Delete
-* KP_Divide
-* KP_Down
-* KP_End
-* KP_Enter
-* KP_Equal
-* KP_F1
-* KP_F2
-* KP_F3
-* KP_F4
-* KP_Home
-* KP_Insert
-* KP_Left
-* KP_Multiply
-* KP_PageDown
-* KP_PageUp
-* KP_Right
-* KP_Separator
-* KP_Space
-* KP_Subtract
-* KP_Tab
-* KP_Up
-* Left
-* LeftTab
-* Linefeed
-* Menu
-* NumLock
-* PageDown
-* PageUp
-* Pause
-* Print
-* Redo
-* Return
-* Right
-* ScrollLock
-* Select
-* Sleep
-* Space
-* SysReq
-* Tab
-* Undo
-* Up
-* WWWBack
-* WWWFavorites
-* WWWForward
-* WWWHome
-* WWWRefresh
-* WWWSearch
-* WWWStop
-* Space
-* Exclaim
-* DoubleQuote
-* Number
-* Dollar
-* Percent
-* Ampersand
-* Apostrophe
-* ParenthesisL
-* ParenthesisR
-* Asterisk
-* Plus
-* Comma
-* Minus
-* Period
-* Slash
-* Colon
-* Semicolon
-* Less
-* Equal
-* Greater
-* Question
-* At
-* BracketL
-* Backslash
-* BracketR
-* Circumflex
-* Underscore
-* Grave
-* BraceL
-* Bar
-* BraceR
-* Tilde
-
-Additionally, a name of the form `\uXXXX` where ''XXXX'' is a hexadecimal number is interpreted as a unicode character code. Key and modifier names are case-insensitive. Keys that don't exist on the keyboard or in the default keyboard layout will not work.
-
-### Example textual configuration file
-
-The alias section is no longer in the server config
-
-This example comes from doc/deskflow-basic.conf
-
-```
-# sample deskflow configuration file
-#
-# comments begin with the # character and continue to the end of
-# line.  comments may appear anywhere the syntax permits.
-# +-------+  +--------+ +---------+
-# |Laptop |  |Desktop1| |iMac     |
-# |       |  |        | |         |
-# +-------+  +--------+ +---------+
 
 section: links
-	# iMac is to the right of Desktop1
-	# Laptop is to the left of Desktop1
-	Desktop1:
-	        right(0,100) = iMac # the numbers in parentheses indicate the percentage of the computer's edge to be considered active for switching)
-		left  = Laptop
-		shift = shift (shift, alt, super, meta can be mapped to any of the others)
-	# Desktop1 is to the right of Laptop
-	Laptop:
-		right = Desktop1
-	# Desktop1 is to the left of iMac
-	iMac:
-		left  = Desktop1
-end
-section: aliases
-	# The "real" name of iMac is John-Smiths-iMac-3.local. 
-	# If we wanted we could remove this alias and instead use John-Smiths-iMac-3.local everywhere iMac is above. 
-	# Hopefully it should be easy to see why using an alias is nicer
-	iMac:
-		John-Smiths-iMac-3.local
+    linux-pc:
+        right = macbook
+    macbook:
+        left = linux-pc
 end
 ```
 
-#### Cursor Wrapping
+设备先在 `screens` 声明，再在 `links` 中引用；设备名和别名查找忽略大小写，不能仅以大小写区别两台设备。每个方向需明确写出，单向链接不会自动生成反向链接。以 `#` 开头的内容是注释。
 
-The text config allows computers to be wrapped around. For example, with two machines (a server and a client), the mouse can go off the right of the server onto the left side of the client, then off the right side of the client back onto the left side of server. This config also uses ''Ctrl''+''Super''+(''left arrow''/''right arrow'') to switch between machines on keypress.
+需要命令行诊断时，真实核心程序名仍为 `deskflow-core`（Windows 为 `deskflow-core.exe`），它是安装包内部兼容名称。用该文件的 `--help` 查看当前参数；来源端使用 `--server --config /absolute/path/server.conf`。正常使用由 GUI 启动核心，避免另开核心争用端口。
 
-```
-# Physical monitor arrangement, with machine names as used by Deskflow.
-#  +----------+----------+
-#  | syn-serv | syn-cli  |
-#  |          |          |
-#  +----------+----------+ 
- 
-section: links
-	syn-serv:
-		left = syn-cli     # "wrapping" arrangement
-		right = syn-cli    # "normal" arrangement
-	syn-cli:
-		left = syn-serv    # "normal"
-		right = syn-serv   # "wrapping"
-end
-section: options
-                keystroke(control+super+right) = switchInDirection(right) # Switch computers on keypress 
-<!--		keystroke(control+super+left) = switchInDirection(left) -->
-end
-```
-
-
-See also: the man page for ''deskflow-core''.
-
-### Stacked Example
-
-Stack one computer on top of another's.
-
-```
-#           +-------+
-#           | curly |
-#           |       |
-#           +-------+
-# +-------+ +-------+
-# | moe   | | larry |
-# |       | |       |
-# +-------+ +-------+
-
-section: links
-	# larry is to the right of moe and curly is above moe.
-	moe:
-		right = larry
-		up    = curly
-
-	# moe is to the left of larry and curly is above larry.
-	larry:
-		left  = moe
-		up    = curly
-
-	# larry is below curly.
-	curly:
-		down  = larry
-end
-
-```
-
-### Horizontal Example
-
-Align all computers horizontally.
-
-```
-# +-------+ +-------+ +-------+
-# | moe   | | larry | | curly |
-# |       | |       | |       |
-# +-------+ +-------+ +-------+
-
-section: links
-	# curly is to the right of larry and moe is to the left of larry.
-	larry:
-		right = curly
-		left  = moe
-
-	# larry is to the right of moe.
-	moe:
-		right = larry
-
-	# larry is to the left of curly.
-	curly:
-		left  = larry
-end
-
-```
-
-### Span Example
-
-Span one computer across the two other computers.
-
-```
-# +-------+ +-------+
-# | curly | | curly |
-# |       | |       |
-# +-------+ +-------+
-# +-------+ +-------+
-# | moe   | | larry |
-# |       | |       |
-# +-------+ +-------+
-
-section: links
-	# larry is to the right of moe and curly is above moe.
-	moe:
-		right = larry
-		up    = curly
-
-	# moe is to the left of larry and curly is above larry.
-	larry:
-		left  = moe
-		up    = curly
-
-	# larry is below curly.
-	curly:
-		down  = larry
-end
-```
+配置键及搜索路径以 [`Settings.h`](../src/lib/common/Settings.h)、[`Settings.cpp`](../src/lib/common/Settings.cpp) 为准；完整语法解析见 [`Config.cpp`](../src/lib/server/Config.cpp)。[返回使用说明](../README.md)。

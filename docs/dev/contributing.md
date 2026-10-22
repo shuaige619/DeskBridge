@@ -1,13 +1,21 @@
-# Contributing to Deskflow {#contributing_guide}
+# 参与 DeskBridge 开发 {#contributing_guide}
 
-Thanks for your interest in contributing to Deskflow! We welcome all kinds of contributions — bug reports, feature suggestions, documentation improvements, and code.
+欢迎为桌桥提交问题、文档修正和代码改进。使用说明见[README](../../README.md)，构建环境见[构建指南](build.md)。
 
-## Read the Full Guidelines
+## 报告问题
 
-To keep this repository clean and contribution-friendly, we've outlined our full contributing guidelines on the Deskflow Wiki:
+在[本仓库问题列表](https://github.com/shuaige619/DeskBridge/issues)提供两端版本、系统、来源／接收角色、最短复现步骤、预期与实际行为，以及必要的日志片段。先去除个人地址、设备名称和无关信息；不要提交证书私钥、完整配置或敏感日志。潜在安全问题先阅读[安全说明](../Security.md)。
 
-👉 [How to Contribute to Deskflow](https://github.com/deskflow/deskflow/wiki/Contributing)
+## 修改代码
 
-Please take a moment to read through the page before opening an issue or submitting a pull request.
+1. 从当前代码创建工作分支，说明要解决的具体问题。
+2. 沿用现有 C++／Qt 结构与仓库的 `.clang-format`、`.editorconfig` 约定。
+3. 保留原有版权、SPDX 和第三方许可声明；修改产品显示名时不要猜测或替换真实的兼容路径、协议值与二进制名称。
+4. 对逻辑变化运行有针对性的隔离测试，GUI 改动检查来源端和接收端的不同状态。
+5. 同步用户可见行为的说明，并记录需要真实硬件验证的范围。
 
-Thanks again for helping make Deskflow better!
+## 提交 Pull Request
+
+说明触发条件、修改后的行为及验证结果。安装包由 Release 分发，构建目录、下载的 SDK、用户配置和 TLS 数据不放入源码提交。提交前检查 `git diff --check`、文件清单和新增文件内容。
+
+协议及内部结构参考[开发概览](mainpage.md)和[协议参考](protocol_reference.md)。
