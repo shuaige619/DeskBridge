@@ -235,41 +235,46 @@ void Settings::upgradeSettings()
     m_settings->endArray();
     m_settings->endGroup();
 
+    // Preserve the existing Windows INI group spelling during legacy upgrades too.
+    const auto storageKey = deskflow::settings_detail::canonicalComputerKey(
+        *m_settings, Settings::Computer::Name.arg(name)
+    );
+    const auto storageName = storageKey.section(QLatin1Char('/'), 0, 0).mid(QStringLiteral("computer_").size());
     // Write Settings
-    if (!m_settings->contains(Settings::Computer::Name.arg(name)))
-      m_settings->setValue(Settings::Computer::Name.arg(name), name);
-    if (!m_settings->contains(Settings::Computer::SwitchCornerSize.arg(name)))
-      m_settings->setValue(Settings::Computer::SwitchCornerSize.arg(name), switchCornerSize);
-    if (!m_settings->contains(Settings::Computer::HalfDuplexCapsLock.arg(name)))
-      m_settings->setValue(Settings::Computer::HalfDuplexCapsLock.arg(name), fixTemp.at(0));
-    if (!m_settings->contains(Settings::Computer::HalfDuplexNumLock.arg(name)))
-      m_settings->setValue(Settings::Computer::HalfDuplexNumLock.arg(name), fixTemp.at(1));
-    if (!m_settings->contains(Settings::Computer::HalfDuplexScrollLock.arg(name)))
-      m_settings->setValue(Settings::Computer::HalfDuplexScrollLock.arg(name), fixTemp.at(2));
-    if (!m_settings->contains(Settings::Computer::XtestIsXineramaUnaware.arg(name)))
-      m_settings->setValue(Settings::Computer::XtestIsXineramaUnaware.arg(name), fixTemp.at(3));
-    if (!m_settings->contains(Settings::Computer::SwitchCornerTopLeft.arg(name)))
-      m_settings->setValue(Settings::Computer::SwitchCornerTopLeft.arg(name), cornerTemp.at(0));
-    if (!m_settings->contains(Settings::Computer::SwitchCornerTopRight.arg(name)))
-      m_settings->setValue(Settings::Computer::SwitchCornerTopRight.arg(name), cornerTemp.at(1));
-    if (!m_settings->contains(Settings::Computer::SwitchCornerBottomLeft.arg(name)))
-      m_settings->setValue(Settings::Computer::SwitchCornerBottomLeft.arg(name), cornerTemp.at(2));
-    if (!m_settings->contains(Settings::Computer::SwitchCornerBottomRight.arg(name)))
-      m_settings->setValue(Settings::Computer::SwitchCornerBottomRight.arg(name), cornerTemp.at(3));
-    if (!m_settings->contains(Settings::Computer::ModifierShift.arg(name)))
-      m_settings->setValue(Settings::Computer::ModifierShift.arg(name), modifierTemp.at(0));
-    if (!m_settings->contains(Settings::Computer::ModifierCtrl.arg(name)))
-      m_settings->setValue(Settings::Computer::ModifierCtrl.arg(name), modifierTemp.at(1));
-    if (!m_settings->contains(Settings::Computer::ModifierAlt.arg(name)))
-      m_settings->setValue(Settings::Computer::ModifierAlt.arg(name), modifierTemp.at(2));
-    if (!m_settings->contains(Settings::Computer::ModifierMeta.arg(name)))
-      m_settings->setValue(Settings::Computer::ModifierMeta.arg(name), modifierTemp.at(3));
-    if (!m_settings->contains(Settings::Computer::ModifierSuper.arg(name)))
-      m_settings->setValue(Settings::Computer::ModifierSuper.arg(name), modifierTemp.at(4));
-    if (!m_settings->contains(Settings::Computer::ModifierAltGr.arg(name)))
-      m_settings->setValue(Settings::Computer::ModifierAltGr.arg(name), modifierTemp.at(5));
-    if (!m_settings->contains(Settings::Computer::Aliases.arg(name))) {
-      m_settings->setValue(Settings::Computer::Aliases.arg(name), aliases);
+    if (!m_settings->contains(Settings::Computer::Name.arg(storageName)))
+      m_settings->setValue(Settings::Computer::Name.arg(storageName), name);
+    if (!m_settings->contains(Settings::Computer::SwitchCornerSize.arg(storageName)))
+      m_settings->setValue(Settings::Computer::SwitchCornerSize.arg(storageName), switchCornerSize);
+    if (!m_settings->contains(Settings::Computer::HalfDuplexCapsLock.arg(storageName)))
+      m_settings->setValue(Settings::Computer::HalfDuplexCapsLock.arg(storageName), fixTemp.at(0));
+    if (!m_settings->contains(Settings::Computer::HalfDuplexNumLock.arg(storageName)))
+      m_settings->setValue(Settings::Computer::HalfDuplexNumLock.arg(storageName), fixTemp.at(1));
+    if (!m_settings->contains(Settings::Computer::HalfDuplexScrollLock.arg(storageName)))
+      m_settings->setValue(Settings::Computer::HalfDuplexScrollLock.arg(storageName), fixTemp.at(2));
+    if (!m_settings->contains(Settings::Computer::XtestIsXineramaUnaware.arg(storageName)))
+      m_settings->setValue(Settings::Computer::XtestIsXineramaUnaware.arg(storageName), fixTemp.at(3));
+    if (!m_settings->contains(Settings::Computer::SwitchCornerTopLeft.arg(storageName)))
+      m_settings->setValue(Settings::Computer::SwitchCornerTopLeft.arg(storageName), cornerTemp.at(0));
+    if (!m_settings->contains(Settings::Computer::SwitchCornerTopRight.arg(storageName)))
+      m_settings->setValue(Settings::Computer::SwitchCornerTopRight.arg(storageName), cornerTemp.at(1));
+    if (!m_settings->contains(Settings::Computer::SwitchCornerBottomLeft.arg(storageName)))
+      m_settings->setValue(Settings::Computer::SwitchCornerBottomLeft.arg(storageName), cornerTemp.at(2));
+    if (!m_settings->contains(Settings::Computer::SwitchCornerBottomRight.arg(storageName)))
+      m_settings->setValue(Settings::Computer::SwitchCornerBottomRight.arg(storageName), cornerTemp.at(3));
+    if (!m_settings->contains(Settings::Computer::ModifierShift.arg(storageName)))
+      m_settings->setValue(Settings::Computer::ModifierShift.arg(storageName), modifierTemp.at(0));
+    if (!m_settings->contains(Settings::Computer::ModifierCtrl.arg(storageName)))
+      m_settings->setValue(Settings::Computer::ModifierCtrl.arg(storageName), modifierTemp.at(1));
+    if (!m_settings->contains(Settings::Computer::ModifierAlt.arg(storageName)))
+      m_settings->setValue(Settings::Computer::ModifierAlt.arg(storageName), modifierTemp.at(2));
+    if (!m_settings->contains(Settings::Computer::ModifierMeta.arg(storageName)))
+      m_settings->setValue(Settings::Computer::ModifierMeta.arg(storageName), modifierTemp.at(3));
+    if (!m_settings->contains(Settings::Computer::ModifierSuper.arg(storageName)))
+      m_settings->setValue(Settings::Computer::ModifierSuper.arg(storageName), modifierTemp.at(4));
+    if (!m_settings->contains(Settings::Computer::ModifierAltGr.arg(storageName)))
+      m_settings->setValue(Settings::Computer::ModifierAltGr.arg(storageName), modifierTemp.at(5));
+    if (!m_settings->contains(Settings::Computer::Aliases.arg(storageName))) {
+      m_settings->setValue(Settings::Computer::Aliases.arg(storageName), aliases);
     }
   }
 }
@@ -528,17 +533,18 @@ void Settings::setValue(const QString &key, const QVariant &value)
 {
   const bool useState = Settings::m_stateKeys.contains(key) && !instance()->isPortableMode();
   auto settings = useState ? instance()->m_stateSettings : instance()->m_settings;
+  const auto storedKey = deskflow::settings_detail::canonicalComputerKey(*settings, key);
 
-  if (settings->value(key) == value)
+  if (settings->value(storedKey) == value)
     return;
 
   if (!value.isValid())
-    settings->remove(key);
+    settings->remove(storedKey);
   else {
     if (key == Settings::Core::ComputerName)
-      settings->setValue(key, cleanComputerName(value.toString()));
+      settings->setValue(storedKey, cleanComputerName(value.toString()));
     else
-      settings->setValue(key, value);
+      settings->setValue(storedKey, value);
   }
 
   settings->sync();
@@ -567,21 +573,22 @@ bool Settings::trySetValue(const QString &key, const QVariant &value, QString *e
       *error = QStringLiteral("配置文件不可写，原配置已保留。");
     return false;
   }
-  const bool existed = settings->contains(key);
-  const QVariant previous = settings->value(key);
+  const auto storedKey = deskflow::settings_detail::canonicalComputerKey(*settings, key);
+  const bool existed = settings->contains(storedKey);
+  const QVariant previous = settings->value(storedKey);
   if (previous == value)
     return true;
 
   // QSettings uses an atomic file replacement. Require it rather than allowing
   // a non-atomic fallback, and publish the settingsChanged signal only on success.
   settings->setAtomicSyncRequired(true);
-  settings->setValue(key, value);
+  settings->setValue(storedKey, value);
   settings->sync();
   if (settings->status() != QSettings::NoError) {
     if (existed)
-      settings->setValue(key, previous);
+      settings->setValue(storedKey, previous);
     else
-      settings->remove(key);
+      settings->remove(storedKey);
     settings->sync();
     if (error)
       *error = QStringLiteral("无法保存配置，已恢复原配置。");
@@ -627,13 +634,13 @@ bool Settings::trySetValues(const QVariantMap &values, QString *error)
   QVariantMap previous;
   QVariantMap requested;
   QStringList changedKeys;
-  const auto stored = deskflow::settings_detail::snapshotStoredValues(transaction, values.keys());
-  const auto caseChangeKeys = deskflow::settings_detail::caseChangeWrites(values);
+  const auto candidates = deskflow::settings_detail::canonicalComputerChanges(transaction, values);
+  const auto stored = deskflow::settings_detail::snapshotStoredValues(transaction, candidates.keys());
   const auto identity = values.constFind(Core::ComputerName);
   const bool changingIdentity = identity != values.cend() && identity.value().isValid() &&
                                 cleanComputerName(identity.value().toString()) !=
                                     transaction.value(Core::ComputerName, defaultValue(Core::ComputerName)).toString();
-  for (auto it = values.cbegin(); it != values.cend(); ++it) {
+  for (auto it = candidates.cbegin(); it != candidates.cend(); ++it) {
     auto candidate = it.value();
     if (it.key() == Core::ComputerName && candidate.isValid())
       candidate = cleanComputerName(candidate.toString());
@@ -644,8 +651,7 @@ bool Settings::trySetValues(const QVariantMap &values, QString *error)
     // Other callers retain the existing implicit-default filtering behavior.
     const bool restoreComputerValue = changingIdentity && candidate.isValid() && !existed &&
                                       it.key().startsWith(QStringLiteral("computer_"));
-    if (!effectiveChanged && !caseChangeKeys.contains(it.key()) &&
-        !restoreComputerValue && (candidate.isValid() || !existed))
+    if (!effectiveChanged && !restoreComputerValue && (candidate.isValid() || !existed))
       continue;
     previous.insert(it.key(), stored.value(it.key()));
     requested.insert(it.key(), candidate);
@@ -692,7 +698,7 @@ void Settings::removeUnknownComputers(const QStringList &knownComputers)
 {
   const QStringList knownGroups = instance()->m_settings->childGroups();
   for (const auto &group : knownGroups) {
-    if (m_validGroup.contains(group) || knownComputers.contains(group))
+    if (m_validGroup.contains(group) || knownComputers.contains(group, deskflow::settings_detail::iniKeyCaseSensitivity))
       continue;
     instance()->m_settings->remove(group);
   }

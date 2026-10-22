@@ -2,6 +2,7 @@
 #include "ConnectionIdentity.h"
 
 #include "common/Settings.h"
+#include "common/SettingsIniTransaction.h"
 #include "gui/validators/ComputerNameValidator.h"
 
 #include <QRegularExpression>
@@ -40,6 +41,7 @@ QVariantMap expandedConnectionIdentityChanges(const QVariantMap &changes)
 #else
   constexpr auto settingsCaseSensitivity = Qt::CaseSensitive;
 #endif
+  const bool sameGroup = oldPrefix.compare(newPrefix, settingsCaseSensitivity) == 0;
   const QRegularExpression screenName(QStringLiteral("^internalConfig/screens/[0-9]+/name$"));
   const QRegularExpression actionTarget(QStringLiteral(
       "^internalConfig/hotkeys/[0-9]+/actions/[0-9]+/"
@@ -47,7 +49,7 @@ QVariantMap expandedConnectionIdentityChanges(const QVariantMap &changes)
   ));
   for (const QString &key : saved.allKeys()) {
     const QVariant value = saved.value(key);
-    if (key.startsWith(oldPrefix, settingsCaseSensitivity)) {
+    if (key.startsWith(oldPrefix, settingsCaseSensitivity) && !sameGroup) {
       const QString target = newPrefix + key.mid(oldPrefix.size());
       if (!expanded.contains(target))
         expanded.insert(target, value);
@@ -61,7 +63,9 @@ QVariantMap expandedConnectionIdentityChanges(const QVariantMap &changes)
       expanded.insert(key, newName);
     }
   }
-  expanded.insert(Settings::Computer::Name.arg(newName), newName);
+  expanded.insert(
+      deskflow::settings_detail::canonicalComputerKey(saved, Settings::Computer::Name.arg(newName)), newName
+  );
   return expanded;
 }
 } // namespace deskflow::gui::personal

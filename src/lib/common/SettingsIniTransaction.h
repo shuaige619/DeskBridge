@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only WITH LicenseRef-OpenSSL-Exception */
 #pragma once
 
-#include <QSet>
 #include <QSettings>
 #include <QStringList>
 #include <QVariantMap>
@@ -13,20 +12,40 @@ inline constexpr auto iniKeyCaseSensitivity = Qt::CaseInsensitive;
 inline constexpr auto iniKeyCaseSensitivity = Qt::CaseSensitive;
 #endif
 
-inline QSet<QString> caseChangeWrites(
-    const QVariantMap &values, Qt::CaseSensitivity sensitivity = iniKeyCaseSensitivity
+inline QString canonicalComputerKey(
+    const QSettings &settings, const QString &key, Qt::CaseSensitivity sensitivity = iniKeyCaseSensitivity
 )
 {
-  QSet<QString> result;
-  if (sensitivity == Qt::CaseSensitive)
-    return result;
-  QSet<QString> removed;
-  for (auto it = values.cbegin(); it != values.cend(); ++it)
-    if (!it.value().isValid())
-      removed.insert(it.key().toLower());
-  for (auto it = values.cbegin(); it != values.cend(); ++it)
-    if (it.value().isValid() && removed.contains(it.key().toLower()))
-      result.insert(it.key());
+  const auto slash = key.indexOf(QLatin1Char('/'));
+  if (sensitivity == Qt::CaseSensitive || slash < 0 || !key.startsWith(QStringLiteral("computer_")))
+    return key;
+  const auto requestedGroup = key.first(slash);
+  QString existingGroup;
+  for (const auto &stored : settings.allKeys()) {
+    const auto storedSlash = stored.indexOf(QLatin1Char('/'));
+    if (storedSlash < 0 || stored.first(storedSlash).compare(requestedGroup, Qt::CaseInsensitive) != 0)
+      continue;
+    if (existingGroup.isEmpty())
+      existingGroup = stored.first(storedSlash);
+    if (stored.mid(storedSlash + 1).compare(QStringLiteral("name"), Qt::CaseInsensitive) == 0) {
+      existingGroup = stored.first(storedSlash);
+      break;
+    }
+  }
+  return existingGroup.isEmpty() ? key : existingGroup + key.mid(slash);
+}
+
+inline QVariantMap canonicalComputerChanges(
+    const QSettings &settings, const QVariantMap &values, Qt::CaseSensitivity sensitivity = iniKeyCaseSensitivity
+)
+{
+  QVariantMap result;
+  for (auto it = values.cbegin(); it != values.cend(); ++it) {
+    const auto key = canonicalComputerKey(settings, it.key(), sensitivity);
+    // A write wins over a removal that aliases the same Windows storage key.
+    if (it.value().isValid() || !result.contains(key))
+      result.insert(key, it.value());
+  }
   return result;
 }
 
@@ -35,24 +54,8 @@ inline QVariantMap snapshotStoredValues(
 )
 {
   QVariantMap result;
-  QSet<QString> seen;
-  QSet<QString> aliases;
-  for (const auto &key : keys) {
-    const auto folded = key.toLower();
-    if (sensitivity == Qt::CaseInsensitive && seen.contains(folded))
-      aliases.insert(folded);
-    seen.insert(folded);
-  }
-  const auto storedKeys = settings.allKeys();
-  for (const auto &key : keys) {
-    // Only migration pairs need exact spelling: contains()/value() otherwise
-    // make the not-yet-created destination look like the existing source.
-    if (aliases.contains(key.toLower()) && !storedKeys.contains(key, Qt::CaseSensitive)) {
-      result.insert(key, QVariant());
-      continue;
-    }
-    result.insert(key, settings.value(key));
-  }
+  for (const auto &key : keys)
+    result.insert(key, settings.value(canonicalComputerKey(settings, key, sensitivity)));
   return result;
 }
 
@@ -60,18 +63,8 @@ inline void applyIniChanges(
     QSettings &settings, const QVariantMap &values, Qt::CaseSensitivity sensitivity = iniKeyCaseSensitivity
 )
 {
-  // Removing a key also removes differently-cased spellings on Windows. Do
-  // every removal first, then recreate all destination keys with their values.
-  if (sensitivity == Qt::CaseInsensitive) {
-    for (auto it = values.cbegin(); it != values.cend(); ++it)
-      if (!it.value().isValid())
-        settings.remove(it.key());
-    for (auto it = values.cbegin(); it != values.cend(); ++it)
-      if (it.value().isValid())
-        settings.setValue(it.key(), it.value());
-    return;
-  }
-  for (auto it = values.cbegin(); it != values.cend(); ++it) {
+  const auto stored = canonicalComputerChanges(settings, values, sensitivity);
+  for (auto it = stored.cbegin(); it != stored.cend(); ++it) {
     if (it.value().isValid())
       settings.setValue(it.key(), it.value());
     else

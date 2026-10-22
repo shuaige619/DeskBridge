@@ -352,22 +352,30 @@ void SettingsTests::iniCaseMigrationKeepsEqualValuesAndRestoresKeySpelling()
   QVERIFY(Settings::trySetValues({{oldName, QStringLiteral("source")}, {oldOption, QStringLiteral("keep")}}));
   const QVariantMap changes{{oldName, QVariant()}, {newName, QStringLiteral("SOURCE")},
                             {oldOption, QVariant()}, {newOption, QStringLiteral("keep")}};
-  // Explicit sensitivity exercises the algorithm's Windows branch on every
-  // host. Native Windows CI separately verifies QSettings's actual semantics.
-  QCOMPARE(caseChangeWrites(changes, Qt::CaseInsensitive), (QSet<QString>{newName, newOption}));
-  QVERIFY(caseChangeWrites(changes, Qt::CaseSensitive).isEmpty());
+  // Explicit sensitivity exercises only prefix selection on every host;
+  // native Windows CI separately checks QSettings's actual key semantics.
+  QCOMPARE(canonicalComputerKey(Settings::proxy().get(), newName, Qt::CaseInsensitive), oldName);
+  QCOMPARE(canonicalComputerKey(Settings::proxy().get(), newName, Qt::CaseSensitive), newName);
+  const auto normalized = canonicalComputerChanges(Settings::proxy().get(), changes, Qt::CaseInsensitive);
+  QCOMPARE(normalized.value(oldName).toString(), QStringLiteral("SOURCE"));
+  QCOMPARE(normalized.value(oldOption).toString(), QStringLiteral("keep"));
+  QCOMPARE(normalized.size(), 2);
   const auto previous = snapshotStoredValues(Settings::proxy().get(), changes.keys());
-  const auto explicitSnapshot = snapshotStoredValues(Settings::proxy().get(), changes.keys(), Qt::CaseInsensitive);
-  QVERIFY(!explicitSnapshot.value(newName).isValid());
-  QCOMPARE(explicitSnapshot.value(oldOption).toString(), QStringLiteral("keep"));
+  const auto expectedNameKey = canonicalComputerKey(Settings::proxy().get(), newName);
+  const auto expectedOptionKey = canonicalComputerKey(Settings::proxy().get(), newOption);
   QVERIFY(Settings::trySetValues(changes));
+  Settings::setValue(newOption, QStringLiteral("changed-set"));
+  QVERIFY(Settings::trySetValue(newOption, QStringLiteral("changed-try")));
+  QVERIFY(Settings::trySetValues({{newOption, QStringLiteral("keep")}}));
   const auto forwardPath = files.filePath(QStringLiteral("forward.conf"));
   QVERIFY(QFile::copy(Settings::settingsFile(), forwardPath));
   const QSettings forward(forwardPath, QSettings::IniFormat);
-  QVERIFY(!forward.allKeys().contains(oldName, Qt::CaseSensitive));
-  QVERIFY(!forward.allKeys().contains(oldOption, Qt::CaseSensitive));
-  QCOMPARE(forward.value(newName).toString(), QStringLiteral("SOURCE"));
-  QCOMPARE(forward.value(newOption).toString(), QStringLiteral("keep"));
+  QVERIFY(forward.allKeys().contains(expectedNameKey, Qt::CaseSensitive));
+  QVERIFY(forward.allKeys().contains(expectedOptionKey, Qt::CaseSensitive));
+  QCOMPARE(forward.value(expectedNameKey).toString(), QStringLiteral("SOURCE"));
+  QCOMPARE(forward.value(expectedOptionKey).toString(), QStringLiteral("keep"));
+  const auto unusedNameKey = expectedNameKey == oldName ? newName : oldName;
+  QVERIFY(!forward.allKeys().contains(unusedNameKey, Qt::CaseSensitive));
   QVERIFY(Settings::trySetValues(previous));
   const auto rollbackPath = files.filePath(QStringLiteral("rollback.conf"));
   QVERIFY(QFile::copy(Settings::settingsFile(), rollbackPath));
@@ -376,14 +384,6 @@ void SettingsTests::iniCaseMigrationKeepsEqualValuesAndRestoresKeySpelling()
   QVERIFY(!rollback.allKeys().contains(newOption, Qt::CaseSensitive));
   QCOMPARE(rollback.value(oldName).toString(), QStringLiteral("source"));
   QCOMPARE(rollback.value(oldOption).toString(), QStringLiteral("keep"));
-
-  QSettings injected(files.filePath(QStringLiteral("algorithm.conf")), QSettings::IniFormat);
-  applyIniChanges(injected, {{oldName, QStringLiteral("source")}, {oldOption, QStringLiteral("keep")}},
-                  Qt::CaseInsensitive);
-  applyIniChanges(injected, changes, Qt::CaseInsensitive);
-  injected.sync();
-  QCOMPARE(injected.value(newOption).toString(), QStringLiteral("keep"));
-  QVERIFY(!injected.allKeys().contains(oldOption, Qt::CaseSensitive));
 }
 
 QTEST_MAIN(SettingsTests)

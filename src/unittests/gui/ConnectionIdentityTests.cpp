@@ -143,7 +143,13 @@ private Q_SLOTS:
     const auto original = deskflow::settings_detail::snapshotStoredValues(originalDisk, originalKeys);
     const auto expanded = expandedConnectionIdentityChanges({{Settings::Core::ComputerName, newName}});
     const auto previous = deskflow::settings_detail::snapshotStoredValues(Settings::proxy().get(), expanded.keys());
-    QVERIFY(!previous.value(Settings::Computer::Name.arg(newName)).isValid());
+    const auto storageNameKey = deskflow::settings_detail::canonicalComputerKey(
+        originalDisk, Settings::Computer::Name.arg(newName)
+    );
+    if (storageNameKey == Settings::Computer::Name.arg(QStringLiteral("source")))
+      QCOMPARE(previous.value(storageNameKey).toString(), QStringLiteral("source"));
+    else
+      QVERIFY(!previous.value(Settings::Computer::Name.arg(newName)).isValid());
     QVERIFY(Settings::trySetValues(expanded));
     QVERIFY(Settings::proxy().contains(Settings::Computer::Name.arg(newName)));
     QVERIFY(Settings::trySetValues(previous));
@@ -202,6 +208,10 @@ private Q_SLOTS:
       ServerConfig saved;
       saved.commit();
       Settings::save(false);
+      Settings::removeUnknownComputers(
+          {QStringLiteral("computer_%1").arg(name), QStringLiteral("computer_target")}
+      );
+      Settings::save(false);
     }
     auto actual = Settings::knownComputers();
     actual.removeAll(QString());
@@ -210,7 +220,11 @@ private Q_SLOTS:
     expected.sort();
     QCOMPARE(actual, expected);
     const auto oldNameKey = Settings::Computer::Name.arg(originalName);
-    QVERIFY(!Settings::proxy().get().allKeys().contains(oldNameKey, Qt::CaseSensitive));
+    const auto storageNameKey = deskflow::settings_detail::canonicalComputerKey(
+        Settings::proxy().get(), Settings::Computer::Name.arg(newName)
+    );
+    if (storageNameKey != oldNameKey)
+      QVERIFY(!Settings::proxy().get().allKeys().contains(oldNameKey, Qt::CaseSensitive));
     QCOMPARE(Settings::value(Settings::Computer::ModifierCtrl.arg(newName)).toString(), QStringLiteral("meta"));
     QCOMPARE(Settings::value(Settings::Computer::Aliases.arg(newName)).toStringList(),
              QStringList{QStringLiteral("source-alias")});
@@ -243,7 +257,12 @@ private Q_SLOTS:
     }
     persistedNames.sort();
     QCOMPARE(persistedNames, expected);
-    QVERIFY(!disk.allKeys().contains(oldNameKey, Qt::CaseSensitive));
+    if (storageNameKey != oldNameKey)
+      QVERIFY(!disk.allKeys().contains(oldNameKey, Qt::CaseSensitive));
+    const auto storagePrefix = storageNameKey.first(storageNameKey.size() - QStringLiteral("name").size());
+    for (const auto &suffix : {QStringLiteral("name"), QStringLiteral("aliases"), QStringLiteral("modifierCtrl"),
+                               QStringLiteral("modifierMeta"), QStringLiteral("future/nestedOption")})
+      QVERIFY2(disk.allKeys().contains(storagePrefix + suffix, Qt::CaseSensitive), qPrintable(storagePrefix + suffix));
     QCOMPARE(disk.value(Settings::Computer::ModifierCtrl.arg(newName)).toString(), QStringLiteral("meta"));
     QCOMPARE(disk.value(Settings::Computer::Aliases.arg(newName)).toStringList(),
              QStringList{QStringLiteral("source-alias")});

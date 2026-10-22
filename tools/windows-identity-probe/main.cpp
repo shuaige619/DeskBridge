@@ -58,20 +58,20 @@ QVariantMap applyLikeProduction(const QVariantMap &values)
   transaction.sync();
   require(transaction.status() == QSettings::NoError, QStringLiteral("INI initial sync failed"));
   QVariantMap requested;
-  const auto caseChangeWrites = deskflow::settings_detail::caseChangeWrites(values);
+  const auto candidates = deskflow::settings_detail::canonicalComputerChanges(transaction, values);
   const QVariant identity = values.value(Settings::Core::ComputerName);
   const bool changingIdentity = identity.isValid() &&
                                 identity.toString() != transaction.value(Settings::Core::ComputerName).toString();
-  // Production trySetValues first filters values against a single unmodified
-  // QSettings view, then applies the resulting QString-sorted QVariantMap.
+  // Production trySetValues canonicalizes stored group spellings, filters
+  // against one unmodified QSettings view, then applies the requested changes.
   // Seeded non-default values avoid needing the full preference defaults here.
-  for (auto it = values.cbegin(); it != values.cend(); ++it) {
+  for (auto it = candidates.cbegin(); it != candidates.cend(); ++it) {
     const QVariant candidate = it.value();
     const bool changed = transaction.value(it.key()) != candidate;
     const bool existed = transaction.contains(it.key());
     const bool restoreComputerValue = changingIdentity && candidate.isValid() && !existed &&
                                       it.key().startsWith(QStringLiteral("computer_"));
-    if (!changed && !caseChangeWrites.contains(it.key()) && !restoreComputerValue && (candidate.isValid() || !existed))
+    if (!changed && !restoreComputerValue && (candidate.isValid() || !existed))
       continue;
     requested.insert(it.key(), candidate);
   }
@@ -95,7 +95,7 @@ QStringList namedDevices(QSettings &saved)
   return names;
 }
 
-void verify(QSettings &saved, const QString &name)
+void verify(QSettings &saved, const QString &name, bool secondaryEdit = false)
 {
   QStringList expected{name, QStringLiteral("target")};
   expected.sort();
@@ -107,18 +107,34 @@ void verify(QSettings &saved, const QString &name)
           QStringLiteral("Core identity was not persisted"));
   const QString prefix = QStringLiteral("computer_%1/").arg(name);
   const QStringList storedKeys = saved.allKeys();
+  QString storedPrefix;
+  for (const QString &key : storedKeys) {
+    if (key.startsWith(QStringLiteral("computer_")) && key.endsWith(QStringLiteral("/name")) &&
+        saved.value(key).toString() == name) {
+      storedPrefix = key.first(key.size() - 4);
+      break;
+    }
+  }
+  require(!storedPrefix.isEmpty() &&
+              storedPrefix.compare(prefix, deskflow::settings_detail::iniKeyCaseSensitivity) == 0,
+          QStringLiteral("Stored device identity prefix does not match the logical identity"));
   for (const QString &suffix : {QStringLiteral("name"), QStringLiteral("modifierCtrl"),
                                 QStringLiteral("modifierMeta"), QStringLiteral("aliases"),
                                 QStringLiteral("future/nestedOption")})
-    require(storedKeys.contains(prefix + suffix, Qt::CaseSensitive),
-            QStringLiteral("Device keys retain an old or mixed group spelling: ") + prefix + suffix);
-  require(saved.value(prefix + QStringLiteral("modifierCtrl")).toString() == QStringLiteral("meta"),
+    require(storedKeys.contains(storedPrefix + suffix, Qt::CaseSensitive),
+            QStringLiteral("Device properties split across storage group spellings: ") + storedPrefix + suffix);
+  require(saved.value(prefix + QStringLiteral("modifierCtrl")).toString() ==
+              (secondaryEdit ? QStringLiteral("alt") : QStringLiteral("meta")),
           QStringLiteral("Source Ctrl modifier lost"));
   require(saved.value(prefix + QStringLiteral("modifierMeta")).toString() == QStringLiteral("ctrl"),
           QStringLiteral("Source Meta modifier lost"));
-  require(saved.value(prefix + QStringLiteral("aliases")).toStringList() == QStringList{QStringLiteral("source-alias")},
+  const QStringList expectedAliases = secondaryEdit
+                                         ? QStringList{QStringLiteral("source-alias"), QStringLiteral("saved-alias")}
+                                         : QStringList{QStringLiteral("source-alias")};
+  require(saved.value(prefix + QStringLiteral("aliases")).toStringList() == expectedAliases,
           QStringLiteral("Source aliases lost"));
-  require(saved.value(prefix + QStringLiteral("future/nestedOption")).toString() == QStringLiteral("keep"),
+  require(saved.value(prefix + QStringLiteral("future/nestedOption")).toString() ==
+              (secondaryEdit ? QStringLiteral("saved") : QStringLiteral("keep")),
           QStringLiteral("Nested unknown source setting lost"));
   require(saved.value(QStringLiteral("computer_target/modifierCtrl")).toString() == QStringLiteral("alt"),
           QStringLiteral("Target modifier changed"));
@@ -147,8 +163,7 @@ QJsonObject runRow(const QString &label, const QStringList &sequence, QTemporary
       const QString oldName = before.value(QStringLiteral("core/computerName")).toString();
       const QStringList oldKeys = before.allKeys();
       const QVariantMap expanded = expandedConnectionIdentityChanges({{Settings::Core::ComputerName, name}});
-      // Windows contains()/value() use CI lookup. Rollback must distinguish
-      // genuinely stored spellings from new spellings that only compare equal.
+      // Share the production canonical storage lookup for rollback snapshots.
       const QVariantMap previous = deskflow::settings_detail::snapshotStoredValues(before, expanded.keys());
       const QVariantMap applied = applyLikeProduction(expanded);
       QSettings warm(path, QSettings::IniFormat);
@@ -168,6 +183,33 @@ QJsonObject runRow(const QString &label, const QStringList &sequence, QTemporary
       require(QFile::copy(path, copied), QStringLiteral("Cannot copy synthetic INI for cold read"));
       QSettings cold(copied, QSettings::IniFormat);
       verify(cold, name);
+
+      // Config editors can save again using the new logical name. Exercise
+      // direct shared writes, including a changed alias and unknown nested
+      // value, so case-only renames cannot create mixed physical INI groups.
+      const QString secondaryPath = temporary.filePath(label + QStringLiteral("-secondary-%1.ini").arg(index));
+      require(QFile::copy(copied, secondaryPath), QStringLiteral("Cannot copy INI for secondary save"));
+      QSettings secondary(secondaryPath, QSettings::IniFormat);
+      const QString logicalPrefix = QStringLiteral("computer_%1/").arg(name);
+      const QVariantMap secondaryChanges{
+          {logicalPrefix + QStringLiteral("name"), name},
+          {logicalPrefix + QStringLiteral("modifierCtrl"), QStringLiteral("alt")},
+          {logicalPrefix + QStringLiteral("modifierMeta"), QStringLiteral("ctrl")},
+          {logicalPrefix + QStringLiteral("aliases"),
+           QStringList{QStringLiteral("source-alias"), QStringLiteral("saved-alias")}},
+          {logicalPrefix + QStringLiteral("future/nestedOption"), QStringLiteral("saved")},
+      };
+      const auto canonicalSecondary = deskflow::settings_detail::canonicalComputerChanges(secondary, secondaryChanges);
+      deskflow::settings_detail::applyIniChanges(secondary, canonicalSecondary);
+      secondary.sync();
+      result.insert(QStringLiteral("lastSecondaryKeys"), QJsonArray::fromStringList(secondary.allKeys()));
+      result.insert(QStringLiteral("lastSecondaryChanges"), QJsonObject::fromVariantMap(canonicalSecondary));
+      verify(secondary, name, true);
+      const QString secondaryColdPath = temporary.filePath(label + QStringLiteral("-secondary-cold-%1.ini").arg(index));
+      require(QFile::copy(secondaryPath, secondaryColdPath), QStringLiteral("Cannot copy secondary save for cold read"));
+      QSettings secondaryCold(secondaryColdPath, QSettings::IniFormat);
+      verify(secondaryCold, name, true);
+
       applyLikeProduction(previous);
       QSettings rollback(path, QSettings::IniFormat);
       verify(rollback, oldName);
@@ -184,6 +226,7 @@ QJsonObject runRow(const QString &label, const QStringList &sequence, QTemporary
                                {QStringLiteral("appliedKeys"), QJsonArray::fromStringList(applied.keys())},
                                {QStringLiteral("namedDevices"), QJsonArray::fromStringList(namedDevices(cold))},
                                {QStringLiteral("storedKeys"), QJsonArray::fromStringList(cold.allKeys())},
+                               {QStringLiteral("secondarySavePassed"), true},
                                {QStringLiteral("rollbackPassed"), true}});
       path = copied;
       Settings::setSettingsFile(path);
