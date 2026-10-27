@@ -7,7 +7,7 @@
  */
 
 #include "ServerConfigDialog.h"
-#include "ui_ServerConfigDialog.h"
+#include "ServerConfigView.h"
 
 #include "common/Constants.h"
 #include "common/NetworkProtocol.h"
@@ -19,9 +19,113 @@
 #include "gui/widgets/SettingsDialogButtonBox.h"
 
 #include <QFileDialog>
+#include <QFileInfo>
+#include <QKeySequence>
 #include <QMessageBox>
 
 using enum ComputerConfig::SwitchCorner;
+
+namespace {
+QString displayKeySequence(const KeySequence &sequence)
+{
+  QStringList keys;
+  for (const int key : sequence.sequence()) {
+    if (key < Qt::Key_Space) {
+      if (key == Qt::LeftButton)
+        keys.append(QStringLiteral("鼠标左键"));
+      else if (key == Qt::RightButton)
+        keys.append(QStringLiteral("鼠标右键"));
+      else if (key == Qt::MiddleButton)
+        keys.append(QStringLiteral("鼠标中键"));
+      else
+        keys.append(QStringLiteral("鼠标侧键"));
+    } else if ((key & Qt::KeyboardModifierMask) && !(key & ~Qt::KeyboardModifierMask)) {
+      if (key & Qt::ControlModifier)
+        keys.append(QStringLiteral("Ctrl"));
+      if (key & Qt::AltModifier)
+        keys.append(QStringLiteral("Alt"));
+      if (key & Qt::ShiftModifier)
+        keys.append(QStringLiteral("Shift"));
+      if (key & Qt::MetaModifier)
+        keys.append(QStringLiteral("Meta"));
+    } else {
+      const QString name =
+          QKeySequence(QKeyCombination(Qt::NoModifier, static_cast<Qt::Key>(key))).toString(QKeySequence::NativeText);
+      if (!name.isEmpty())
+        keys.append(name);
+    }
+  }
+  return keys.isEmpty() ? QStringLiteral("未设置按键") : keys.join(QStringLiteral(" + "));
+}
+
+QString displayHotkey(const Hotkey &hotkey)
+{
+  return QStringLiteral("%1  ·  %2 个动作").arg(displayKeySequence(hotkey.keySequence())).arg(hotkey.actions().size());
+}
+
+QString displayAction(const Action &action)
+{
+  QString description;
+  const QString keys = displayKeySequence(action.keySequence());
+  const QString targets = action.keySequence().isMouseButton()
+                              ? QStringLiteral("当前受控设备")
+                              : (action.haveComputers() && !action.typeComputerNames().isEmpty()
+                                     ? action.typeComputerNames().join(QStringLiteral("、"))
+                                     : QStringLiteral("全部设备"));
+  switch (static_cast<Action::Type>(action.type())) {
+  case Action::Type::keyDown:
+  case Action::Type::mouseDown:
+    description = QStringLiteral("按住 %1 → %2").arg(keys, targets);
+    break;
+  case Action::Type::keyUp:
+  case Action::Type::mouseUp:
+    description = QStringLiteral("释放 %1 → %2").arg(keys, targets);
+    break;
+  case Action::Type::keystroke:
+  case Action::Type::mousebutton:
+    description = action.tapAtTrigger() ? QStringLiteral("点按 %1 → %2").arg(keys, targets)
+                                        : QStringLiteral("随热键保持 %1 → %2").arg(keys, targets);
+    break;
+  case Action::Type::switchToComputer:
+    description = QStringLiteral("切换到设备 %1").arg(action.switchComputerName());
+    break;
+  case Action::Type::switchInDirection: {
+    const QStringList directions{
+        QStringLiteral("左"), QStringLiteral("右"), QStringLiteral("上"), QStringLiteral("下")
+    };
+    description =
+        QStringLiteral("切换到%1方相邻设备").arg(directions.value(action.switchDirection(), QStringLiteral("指定")));
+    break;
+  }
+  case Action::Type::switchToNextComputer:
+    description = QStringLiteral("切换到下一台设备");
+    break;
+  case Action::Type::lockCursorToComputer: {
+    const QStringList modes{
+        QStringLiteral("切换键鼠锁定状态"), QStringLiteral("将键鼠锁定在当前设备"), QStringLiteral("解除键鼠锁定")
+    };
+    description = modes.value(action.lockCursorMode(), modes.first());
+    break;
+  }
+  case Action::Type::restartAllConnections:
+    description = QStringLiteral("重启共享连接");
+    break;
+  default:
+    description = QStringLiteral("未知动作，请编辑后检查");
+    break;
+  }
+  const bool hold = (action.type() == static_cast<int>(Action::Type::keystroke) ||
+                     action.type() == static_cast<int>(Action::Type::mousebutton)) &&
+                    !action.tapAtTrigger();
+  return QStringLiteral("%1  ·  %2")
+      .arg(
+          hold                       ? QStringLiteral("按下保持，松开释放")
+          : action.activeOnRelease() ? QStringLiteral("松开热键时")
+                                     : QStringLiteral("按下热键时"),
+          description
+      );
+}
+} // namespace
 
 ServerConfigDialog::ServerConfigDialog(QWidget *parent, ServerConfig &config)
     : QDialog(parent, Qt::WindowTitleHint | Qt::WindowSystemMenuHint),
@@ -37,21 +141,39 @@ ServerConfigDialog::ServerConfigDialog(QWidget *parent, ServerConfig &config)
 {
   ui->setupUi(this);
   ui->tabWidget->setCurrentIndex(0);
+  m_buttonBox->setProperty("personalFooter", true);
   layout()->addWidget(m_buttonBox);
 
   loadFromConfig();
 
-  ui->lblRemoveComputer->setPixmap(QIcon::fromTheme("user-trash").pixmap(QSize(64, 64)));
+  ui->lblRemoveComputer->setPixmap(deskflow::gui::personal::personalCloseIcon().pixmap(QSize(32, 32)));
   ui->lblNewComputer->setEnabled(!model().isFull());
-  ui->lblNewComputer->setPixmap(QIcon::fromTheme("video-display").pixmap(QSize(64, 64)));
+  ui->lblNewComputer->setPixmap(
+      deskflow::gui::personal::personalIcon(QStringLiteral("devices"), deskflow::gui::personal::personalAccentColor())
+          .pixmap(QSize(36, 36))
+  );
   ui->btnBrowseConfigFile->setIcon(QIcon::fromTheme(QIcon::ThemeIcon::DocumentOpen));
 
   if (!deskflow::platform::isWindows())
     ui->cbWin32KeepForeground->setVisible(false);
   initConnections();
+  updateControls();
 }
 
 ServerConfigDialog::~ServerConfigDialog() = default;
+
+void ServerConfigDialog::message(const QString &message)
+{
+  m_message = message;
+  if (!message.isEmpty()) {
+    auto *notice = new QLabel(message, this);
+    notice->setWordWrap(true);
+    notice->setTextFormat(Qt::PlainText);
+    notice->setProperty("secondaryText", true);
+    notice->setContentsMargins(24, 0, 24, 14);
+    static_cast<QVBoxLayout *>(layout())->insertWidget(1, notice);
+  }
+}
 
 bool ServerConfigDialog::addClient(const QString &clientName)
 {
@@ -60,15 +182,13 @@ bool ServerConfigDialog::addClient(const QString &clientName)
 
 void ServerConfigDialog::save()
 {
-  if (ui->groupExternalConfig->isChecked() && !QFile::exists(ui->lineConfigFile->text())) {
-
-    auto selectedButton = QMessageBox::warning(
-        this, "Filename invalid", "Please select a valid configuration file.", QMessageBox::Ok | QMessageBox::Ignore
-    );
-
-    if (selectedButton != QMessageBox::Ok || !browseConfigFile()) {
-      return;
-    }
+  if (!Settings::isWritable())
+    return;
+  if (ui->groupExternalConfig->isChecked() && !QFileInfo(ui->lineConfigFile->text()).isFile()) {
+    QMessageBox::warning(this, tr("配置文件不可用"), tr("请选择存在的配置文件后再保存。"));
+    ui->navigation->setCurrentRow(3);
+    ui->lineConfigFile->setFocus();
+    return;
   }
   // now that the dialog has been accepted, copy the new server config to the
   // original one, which is a reference to the one in MainWindow.
@@ -109,8 +229,6 @@ void ServerConfigDialog::save()
 
 void ServerConfigDialog::cancel()
 {
-  serverConfig().setUseExternalConfig(m_originalServerConfigIsExternal);
-  serverConfig().setConfigFile(m_originalServerConfigUsesExternalFile);
   QDialog::reject();
 }
 
@@ -120,7 +238,7 @@ void ServerConfigDialog::addHotkey()
   HotkeyDialog dlg(this, hotkey);
   if (dlg.exec() == QDialog::Accepted) {
     serverConfig().hotkeys().append(hotkey);
-    ui->listHotkeys->addItem(hotkey.text());
+    ui->listHotkeys->addItem(displayHotkey(hotkey));
     setButtonBoxEnabledButtons();
   }
 }
@@ -136,7 +254,7 @@ void ServerConfigDialog::editHotkey()
   Hotkey &hotkey = serverConfig().hotkeys()[row];
   HotkeyDialog dlg(this, hotkey);
   if (dlg.exec() == QDialog::Accepted) {
-    ui->listHotkeys->currentItem()->setText(hotkey.text());
+    ui->listHotkeys->currentItem()->setText(displayHotkey(hotkey));
     setButtonBoxEnabledButtons();
   }
 }
@@ -157,16 +275,16 @@ void ServerConfigDialog::removeHotkey()
 
 void ServerConfigDialog::listHotkeysSelectionChanged(const QItemSelection &selected, const QItemSelection &)
 {
-  bool itemsSelected = !selected.isEmpty();
+  bool itemsSelected = Settings::isWritable() && !selected.isEmpty();
   ui->btnEditHotkey->setEnabled(itemsSelected);
   ui->btnRemoveHotkey->setEnabled(itemsSelected);
   ui->btnNewAction->setEnabled(itemsSelected);
 
+  ui->listActions->clear();
   if (itemsSelected && !serverConfig().hotkeys().isEmpty()) {
-    ui->listActions->clear();
     const Hotkey &hotkey = serverConfig().hotkeys().at(selected.indexes().first().row());
     for (const Action &action : hotkey.actions())
-      ui->listActions->addItem(action.text());
+      ui->listActions->addItem(displayAction(action));
   }
 }
 
@@ -183,7 +301,8 @@ void ServerConfigDialog::addAction()
   ActionDialog dlg(this, serverConfig(), hotkey, action);
   if (dlg.exec() == QDialog::Accepted) {
     hotkey.addAction(action);
-    ui->listActions->addItem(action.text());
+    ui->listActions->addItem(displayAction(action));
+    ui->listHotkeys->currentItem()->setText(displayHotkey(hotkey));
     setButtonBoxEnabledButtons();
   }
 }
@@ -206,7 +325,7 @@ void ServerConfigDialog::editAction()
 
   ActionDialog dlg(this, serverConfig(), hotkey, action);
   if (dlg.exec() == QDialog::Accepted) {
-    ui->listActions->currentItem()->setText(action.text());
+    ui->listActions->currentItem()->setText(displayAction(action));
     setButtonBoxEnabledButtons();
   }
 }
@@ -228,6 +347,7 @@ void ServerConfigDialog::removeAction()
 
   hotkey.removeActionAt(actionRow);
   delete ui->listActions->currentItem();
+  ui->listHotkeys->currentItem()->setText(displayHotkey(hotkey));
   setButtonBoxEnabledButtons();
 }
 
@@ -238,7 +358,7 @@ void ServerConfigDialog::toggleClipboard(bool enabled)
 
   m_enableClipboard = enabled;
 
-  ui->sbClipboardSizeLimit->setEnabled(enabled);
+  ui->sbClipboardSizeLimit->setEnabled(enabled && Settings::isWritable());
   if (enabled && !ui->sbClipboardSizeLimit->value()) {
     m_clipboardSize = Settings::defaultValue(Settings::Server::ClipboardSize).toUInt();
     ui->sbClipboardSizeLimit->setValue(m_clipboardSize ? m_clipboardSize : 1);
@@ -258,7 +378,7 @@ void ServerConfigDialog::setClipboardLimit(int limit)
 void ServerConfigDialog::toggleHeartbeat(bool enabled)
 {
   m_enableHeartbeat = enabled;
-  ui->sbHeartbeat->setEnabled(enabled);
+  ui->sbHeartbeat->setEnabled(enabled && Settings::isWritable());
   setButtonBoxEnabledButtons();
 }
 
@@ -286,7 +406,7 @@ void ServerConfigDialog::toggleProtocol()
 
 void ServerConfigDialog::listActionsSelectionChanged(const QItemSelection &selected, const QItemSelection &)
 {
-  bool enabled = !selected.isEmpty();
+  bool enabled = Settings::isWritable() && !selected.isEmpty();
   ui->btnEditAction->setEnabled(enabled);
   ui->btnRemoveAction->setEnabled(enabled);
 }
@@ -294,7 +414,7 @@ void ServerConfigDialog::listActionsSelectionChanged(const QItemSelection &selec
 void ServerConfigDialog::toggleSwitchDoubleTap(bool enable)
 {
   m_enableSwitchDoubleTap = enable;
-  ui->sbSwitchDoubleTap->setEnabled(enable);
+  ui->sbSwitchDoubleTap->setEnabled(enable && Settings::isWritable());
   setButtonBoxEnabledButtons();
 }
 
@@ -309,7 +429,7 @@ void ServerConfigDialog::setSwitchDoubleTap(int within)
 void ServerConfigDialog::toggleSwitchDelay(bool enable)
 {
   m_enableSwitchDelay = enable;
-  ui->sbSwitchDelay->setEnabled(enable);
+  ui->sbSwitchDelay->setEnabled(enable && Settings::isWritable());
   setButtonBoxEnabledButtons();
 }
 
@@ -352,27 +472,23 @@ void ServerConfigDialog::addClient()
 
 void ServerConfigDialog::onComputerRemoved()
 {
-  ui->lblNewComputer->setEnabled(true);
+  updateComputerControls();
   setButtonBoxEnabledButtons();
 }
 
 void ServerConfigDialog::toggleExternalConfig(bool checked)
 {
-  ui->widgetExternalConfigControls->setEnabled(checked);
-  ui->tabWidget->setTabEnabled(0, !checked);
-  ui->tabWidget->setTabEnabled(1, !checked);
-  serverConfig().setUseExternalConfig(checked);
-  setButtonBoxEnabledButtons();
+  ui->externalConfigNotice->setVisible(checked);
+  updateControls();
 }
 
 bool ServerConfigDialog::browseConfigFile()
 {
   //: %1 is replaced with the application names
   //: (*.conf) and (*.*) should not be translated
-  const auto deskflowConfigFilter = tr("%1 Configurations (*.conf);;All files (*.*)");
+  const auto deskflowConfigFilter = tr("%1 配置文件 (*.conf);;所有文件 (*.*)");
 
-  QString fileName =
-      QFileDialog::getOpenFileName(this, tr("Browse for a config file"), "", deskflowConfigFilter.arg(kAppName));
+  QString fileName = QFileDialog::getOpenFileName(this, tr("选择共享配置文件"), "", deskflowConfigFilter.arg(kAppName));
 
   if (!fileName.isEmpty()) {
     ui->lineConfigFile->setText(fileName);
@@ -399,14 +515,15 @@ void ServerConfigDialog::loadFromConfig()
   m_enableClipboard = Settings::value(Settings::Server::EnableClipboard).toBool();
   m_clipboardSize = Settings::value(Settings::Server::ClipboardSize).toUInt();
 
-  ui->lineConfigFile->setText(serverConfig().configFile());
-  ui->groupExternalConfig->setChecked(serverConfig().useExternalConfig());
+  ui->lineConfigFile->setText(m_originalServerConfigUsesExternalFile);
+  ui->groupExternalConfig->setChecked(m_originalServerConfigIsExternal);
 
   refreshControls();
 
   ui->listHotkeys->clear();
+  ui->listActions->clear();
   for (const Hotkey &hotkey : std::as_const(serverConfig().hotkeys()))
-    ui->listHotkeys->addItem(hotkey.text());
+    ui->listHotkeys->addItem(displayHotkey(hotkey));
 
   ui->computerSetupView->setModel(&m_computerSetupModel);
 
@@ -428,13 +545,9 @@ void ServerConfigDialog::loadFromConfig()
 void ServerConfigDialog::resetFromSettings()
 {
   m_serverConfig = m_originalServerConfig;
-  m_serverConfig.setConfigFile(m_originalServerConfigUsesExternalFile);
-  m_serverConfig.setUseExternalConfig(m_originalServerConfigIsExternal);
   loadFromConfig();
-  if (ui->tabWidget->currentWidget() == ui->tabComputers) {
-    ui->computerSetupView->reset();
-    ui->computerSetupView->update();
-  }
+  ui->computerSetupView->reset();
+  ui->computerSetupView->update();
 }
 
 void ServerConfigDialog::refreshControls()
@@ -467,7 +580,17 @@ void ServerConfigDialog::initConnections() const
   connect(m_buttonBox, &SettingsDialogButtonBox::rejected, this, &ServerConfigDialog::cancel);
   connect(m_buttonBox, &SettingsDialogButtonBox::reset, this, &ServerConfigDialog::resetFromSettings);
   connect(m_buttonBox, &SettingsDialogButtonBox::restoreDefault, this, &ServerConfigDialog::restoreFromDefaults);
-  connect(ui->tabWidget, &QTabWidget::currentChanged, this, &ServerConfigDialog::setButtonBoxEnabledButtons);
+  connect(ui->tabWidget, &QStackedWidget::currentChanged, this, &ServerConfigDialog::setButtonBoxEnabledButtons);
+  connect(
+      ui->btnAddComputer, &QPushButton::clicked, this,
+      static_cast<void (ServerConfigDialog::*)()>(&ServerConfigDialog::addClient)
+  );
+  connect(ui->btnEditComputer, &QPushButton::clicked, this, &ServerConfigDialog::editComputer);
+  connect(ui->btnRemoveComputer, &QPushButton::clicked, this, &ServerConfigDialog::removeComputer);
+  connect(
+      ui->computerSetupView->selectionModel(), &QItemSelectionModel::selectionChanged, this,
+      &ServerConfigDialog::updateComputerControls
+  );
   connect(ui->lblRemoveComputer, &RemoveComputerWidget::computerRemoved, this, &ServerConfigDialog::onComputerRemoved);
   connect(ui->btnNewHotkey, &QPushButton::clicked, this, &ServerConfigDialog::addHotkey);
   connect(ui->btnEditHotkey, &QPushButton::clicked, this, &ServerConfigDialog::editHotkey);
@@ -501,7 +624,8 @@ void ServerConfigDialog::initConnections() const
   connect(ui->cbRelativeMouseMoves, &QCheckBox::toggled, this, &ServerConfigDialog::toggleRelativeMouseMoves);
   connect(ui->cbEnableClipboard, &QCheckBox::toggled, this, &ServerConfigDialog::toggleClipboard);
   connect(ui->btnBrowseConfigFile, &QPushButton::clicked, this, &ServerConfigDialog::browseConfigFile);
-  connect(ui->groupExternalConfig, &QGroupBox::toggled, this, &ServerConfigDialog::toggleExternalConfig);
+  connect(ui->btnExportConfig, &QPushButton::clicked, this, &ServerConfigDialog::exportConfig);
+  connect(ui->groupExternalConfig, &QCheckBox::toggled, this, &ServerConfigDialog::toggleExternalConfig);
   connect(ui->lineConfigFile, &QLineEdit::textChanged, this, &ServerConfigDialog::setServerConfig);
 
   connect(
@@ -522,13 +646,20 @@ void ServerConfigDialog::initConnections() const
 void ServerConfigDialog::updateControls() const
 {
   const bool writable = Settings::isWritable();
+  const bool external = ui->groupExternalConfig->isChecked();
+  ui->tabComputers->setEnabled(writable && !external);
+  ui->tabHotkeys->setEnabled(writable && !external);
+  ui->computerSetupView->setDragEnabled(writable && !external);
+  ui->computerSetupView->setAcceptDrops(writable && !external);
+  ui->widgetExternalConfigControls->setEnabled(writable && external);
   ui->cbDefaultLockToComputerState->setEnabled(writable);
   ui->cbDisableLockToComputer->setEnabled(writable);
   ui->cbEnableClipboard->setEnabled(writable);
-  ui->sbClipboardSizeLimit->setEnabled(writable);
+  ui->sbClipboardSizeLimit->setEnabled(writable && ui->cbEnableClipboard->isChecked());
   ui->rbProtocolBarrier->setEnabled(writable);
   ui->rbProtocolSynergy->setEnabled(writable);
   ui->cbHeartbeat->setEnabled(writable);
+  ui->sbHeartbeat->setEnabled(writable && ui->cbHeartbeat->isChecked());
   ui->cbRelativeMouseMoves->setEnabled(writable);
   ui->cbSwitchDelay->setEnabled(writable);
   ui->cbWin32KeepForeground->setEnabled(writable);
@@ -536,6 +667,15 @@ void ServerConfigDialog::updateControls() const
   ui->sbSwitchDoubleTap->setEnabled(writable && ui->cbSwitchDoubleTap->isChecked());
   ui->sbSwitchDelay->setEnabled(writable && ui->cbSwitchDelay->isChecked());
   ui->groupExternalConfig->setEnabled(writable);
+  ui->btnNewHotkey->setEnabled(writable && !external);
+  const bool hotkeySelected = writable && !external && ui->listHotkeys->currentRow() >= 0;
+  ui->btnEditHotkey->setEnabled(hotkeySelected);
+  ui->btnRemoveHotkey->setEnabled(hotkeySelected);
+  ui->btnNewAction->setEnabled(hotkeySelected);
+  const bool actionSelected = hotkeySelected && ui->listActions->currentRow() >= 0;
+  ui->btnEditAction->setEnabled(actionSelected);
+  ui->btnRemoveAction->setEnabled(actionSelected);
+  updateComputerControls();
   setButtonBoxEnabledButtons();
 }
 
@@ -564,17 +704,13 @@ void ServerConfigDialog::restoreFromDefaults()
 
 void ServerConfigDialog::setServerConfig()
 {
-  const auto configFile = ui->lineConfigFile->text();
-  if (!QFile::exists(configFile)) {
-    m_buttonBox->enableSave(false);
-    return;
-  }
-  serverConfig().setConfigFile(configFile);
   setButtonBoxEnabledButtons();
 }
 
 bool ServerConfigDialog::addComputer(const QString &clientName, bool doSilent)
 {
+  if (!Settings::isWritable() || ui->groupExternalConfig->isChecked() || model().isFull())
+    return false;
   bool isAccepted = false;
   Computer newComputer(clientName);
 
@@ -584,14 +720,14 @@ bool ServerConfigDialog::addComputer(const QString &clientName, bool doSilent)
     isAccepted = true;
   }
 
-  ui->lblNewComputer->setEnabled(!model().isFull());
+  updateComputerControls();
   return isAccepted;
 }
 
 bool ServerConfigDialog::isGeneralConfigModified() const
 {
-  return m_originalServerConfigIsExternal != Settings::value(Settings::Server::ExternalConfig).toBool() ||
-         m_originalServerConfigUsesExternalFile != Settings::value(Settings::Server::ExternalConfigFile).toString() ||
+  return m_originalServerConfigIsExternal != ui->groupExternalConfig->isChecked() ||
+         m_originalServerConfigUsesExternalFile != ui->lineConfigFile->text() ||
          m_protocol != Settings::networkProtocol() ||
          m_enableClipboard != Settings::value(Settings::Server::EnableClipboard).toBool() ||
          m_clipboardSize != Settings::value(Settings::Server::ClipboardSize).toUInt() ||
@@ -629,7 +765,60 @@ bool ServerConfigDialog::isGeneralConfigDefault() const
 void ServerConfigDialog::setButtonBoxEnabledButtons() const
 {
   const bool writable = Settings::isWritable();
-  m_buttonBox->enableSave(writable && (isGeneralConfigModified() || !(m_originalServerConfig == m_serverConfig)));
-  m_buttonBox->enableReset(writable && (isGeneralConfigModified() || !(m_originalServerConfig == m_serverConfig)));
-  m_buttonBox->enableRestoreDefaults(writable && !isGeneralConfigDefault() && ui->tabWidget->currentIndex() == 2);
+  const bool modified = isGeneralConfigModified() || !(m_originalServerConfig == m_serverConfig);
+  const bool validFile = !ui->groupExternalConfig->isChecked() || QFileInfo(ui->lineConfigFile->text()).isFile();
+  m_buttonBox->enableSave(writable && modified && validFile);
+  m_buttonBox->enableReset(writable && modified);
+  m_buttonBox->enableRestoreDefaults(writable && !isGeneralConfigDefault() && ui->tabWidget->currentIndex() >= 2);
+  updateComputerControls();
+}
+
+void ServerConfigDialog::updateComputerControls() const
+{
+  const bool editable = Settings::isWritable() && !ui->groupExternalConfig->isChecked();
+  const auto index = ui->computerSetupView->currentIndex();
+  const bool selected = editable && index.isValid() && !m_computerSetupModel.computer(index).isNull();
+  ui->btnAddComputer->setEnabled(editable && !m_computerSetupModel.isFull());
+  ui->lblNewComputer->setEnabled(editable && !m_computerSetupModel.isFull());
+  ui->lblRemoveComputer->setEnabled(editable);
+  ui->btnEditComputer->setEnabled(selected);
+  ui->btnRemoveComputer->setEnabled(selected && !m_computerSetupModel.computer(index).isServer());
+}
+
+void ServerConfigDialog::editComputer()
+{
+  const auto index = ui->computerSetupView->currentIndex();
+  if (!Settings::isWritable() || ui->groupExternalConfig->isChecked() || !index.isValid() ||
+      model().computer(index).isNull())
+    return;
+  ComputerSettingsDialog dialog(this, &model().computer(index), &model().m_computers);
+  if (dialog.exec() == QDialog::Accepted) {
+    ui->computerSetupView->viewport()->update();
+    setButtonBoxEnabledButtons();
+  }
+}
+
+void ServerConfigDialog::removeComputer()
+{
+  const auto index = ui->computerSetupView->currentIndex();
+  if (!Settings::isWritable() || ui->groupExternalConfig->isChecked() || !index.isValid() ||
+      model().computer(index).isNull() || model().computer(index).isServer())
+    return;
+  model().computer(index) = Computer();
+  ui->computerSetupView->reset();
+  ui->computerSetupView->viewport()->update();
+  onComputerRemoved();
+}
+
+void ServerConfigDialog::exportConfig()
+{
+  const QString fileName = QFileDialog::getSaveFileName(
+      this, tr("导出设备布局与控制热键草稿"), QStringLiteral("deskbridge-server.conf"),
+      tr("共享配置文件 (*.conf);;所有文件 (*.*)")
+  );
+  if (fileName.isEmpty())
+    return;
+  if (!serverConfig().save(fileName)) {
+    QMessageBox::warning(this, tr("无法导出配置"), tr("无法写入所选文件，请检查文件夹权限后重试。"));
+  }
 }

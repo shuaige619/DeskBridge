@@ -4,8 +4,8 @@
 #include "common/Enums.h"
 #include "common/ScreenLayout.h"
 #include "common/ShortcutRules.h"
-#include <QWidget>
 #include <QVariantMap>
+#include <QWidget>
 
 class QCheckBox;
 class QAction;
@@ -25,13 +25,27 @@ class PersonalWindow : public QWidget
 {
   Q_OBJECT
 public:
-  enum Page { Connection, Shortcuts, General, Advanced };
+  enum Page
+  {
+    Connection,
+    Shortcuts,
+    General,
+    Advanced
+  };
   explicit PersonalWindow(QWidget *parent = nullptr, LoginStartup *service = nullptr);
-  ShortcutPage *shortcutsPage() const { return m_shortcuts; }
-  AdvancedPage *advancedPage() const { return m_advanced; }
+  ShortcutPage *shortcutsPage() const
+  {
+    return m_shortcuts;
+  }
+  AdvancedPage *advancedPage() const
+  {
+    return m_advanced;
+  }
   void showPage(Page page);
-  void setConnectionStatus(deskflow::core::ConnectionState connection, deskflow::core::ProcessState process,
-                           bool tlsEnabled, bool secure, bool canConnect, const QString &host, const QString &macName);
+  void setConnectionStatus(
+      deskflow::core::ConnectionState connection, deskflow::core::ProcessState process, bool tlsEnabled, bool secure,
+      bool canConnect, const QString &host, const QString &macName
+  );
   void setMappingStatus(bool enabled, int enabledRules, const QString &fullShortcutStatus = {});
   void setDeviceContext(shortcuts::DeviceOS sourceOS, bool server);
   void setScreenLayout(const layout::Snapshot &snapshot, bool pending = false, const QString &feedback = {});
@@ -40,12 +54,16 @@ public:
   void setPreferencesStatus(const QString &message);
   void setConnectionFeedback(const QString &message);
   void setConfigurationBusy(bool busy, bool allowDisconnect = false);
-  bool hasPendingPreferences() const { return m_preferencesDirty; }
+  bool hasPendingPreferences() const
+  {
+    return m_preferencesDirty;
+  }
 
 Q_SIGNALS:
   void connectRequested();
   void disconnectRequested();
   void connectionOptionsRequested();
+  void deviceManagementRequested();
   void preferencesApplyRequested(const QVariantMap &changes);
   void screenLayoutRequested(deskflow::layout::Direction direction);
   void screenMoveRequested(const deskflow::layout::Move &move);
@@ -82,18 +100,19 @@ private:
   QLabel *m_connectionHint = nullptr;
   QLabel *m_connectionFeedback = nullptr;
   QLabel *m_layoutNote = nullptr;
-  QLabel *m_mappingDetail = nullptr;
-  QLabel *m_mappingBadge = nullptr;
+  QLabel *m_connectionDetails = nullptr;
   QLabel *m_preferencesMessage = nullptr;
   QPushButton *m_primaryButton = nullptr;
   QAction *m_connectionAction = nullptr;
-  QPushButton *m_mappingRow = nullptr;
+  QPushButton *m_manageDevices = nullptr;
   QPushButton *m_savePreferences = nullptr;
   QPushButton *m_revertPreferences = nullptr;
   QPushButton *m_connectionOptions = nullptr;
   QList<QPushButton *> m_navigation;
   DeviceIllustration *m_devices = nullptr;
   QCheckBox *m_autoConnect = nullptr;
+  QCheckBox *m_showVersion = nullptr;
+  QCheckBox *m_symbolicTray = nullptr;
   QCheckBox *m_autoHide = nullptr;
   QCheckBox *m_closeToTray = nullptr;
   QCheckBox *m_invertScroll = nullptr;

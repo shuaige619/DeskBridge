@@ -16,11 +16,13 @@
 #include "gui/MainWindow.h"
 #include "gui/Messages.h"
 #include "gui/StyleUtils.h"
+#include "gui/personal/DialogStyle.h"
 
 #include <QApplication>
 #include <QCommandLineParser>
 #include <QLocalSocket>
 #include <QMessageBox>
+#include <QPushButton>
 #include <QSharedMemory>
 
 #if defined(Q_OS_MACOS)
@@ -113,7 +115,13 @@ int main(int argc, char *argv[])
     if (!socket.waitForConnected()) {
       // If we can't connect to the other instance tell the user its running.
       // This should never happen but just incase we should show something
-      QMessageBox::information(nullptr, kAppName, QObject::tr("%1 is already running").arg(kAppName));
+      QMessageBox message(
+          QMessageBox::Information, QObject::tr("桌桥已在运行"), QObject::tr("请从菜单栏或系统托盘打开桌桥窗口。"),
+          QMessageBox::Ok
+      );
+      deskflow::gui::personal::prepareDialog(&message, 420, 180);
+      message.button(QMessageBox::Ok)->setText(QObject::tr("知道了"));
+      message.exec();
     }
     socket.disconnectFromServer();
     return s_exitDuplicate;
@@ -136,11 +144,13 @@ int main(int argc, char *argv[])
 #if defined(Q_OS_MACOS)
 
   if (app.applicationDirPath().startsWith("/Volumes/")) {
-    QString msgBody = QStringLiteral(
-        "Please drag %1 to the Applications folder, "
-        "and open it from there."
+    QMessageBox message(
+        QMessageBox::Information, QObject::tr("安装桌桥"), QObject::tr("请将桌桥拖到“应用程序”文件夹，再从那里打开。"),
+        QMessageBox::Ok
     );
-    QMessageBox::information(nullptr, kAppName, msgBody.arg(kAppName));
+    deskflow::gui::personal::prepareDialog(&message, 420, 180);
+    message.button(QMessageBox::Ok)->setText(QObject::tr("知道了"));
+    message.exec();
     return 1;
   }
 

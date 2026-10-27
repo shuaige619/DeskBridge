@@ -26,7 +26,27 @@ void ipcSendToClient(const QString &command, const QString &args)
 void ipcSendConnectionState(deskflow::core::ConnectionState state)
 {
   const auto metaEnum = QMetaEnum::fromType<deskflow::core::ConnectionState>();
-  ipcSendToClient(QStringLiteral("connectionState"), metaEnum.valueToKey(static_cast<int>(state)));
+  const auto name = QString::fromLatin1(metaEnum.valueToKey(static_cast<int>(state)));
+  auto *server = &deskflow::core::ipc::CoreIpcServer::instance();
+  QMetaObject::invokeMethod(server, [server, state, name] {
+    server->broadcastCommand(QStringLiteral("connectionState"), name);
+    if (state == deskflow::core::ConnectionState::Connecting || state == deskflow::core::ConnectionState::Disconnected) {
+      server->setSourceOperatingSystem(deskflow::shortcuts::DeviceOS::Unknown);
+      server->setServerModifierMapping(false);
+    }
+  }, Qt::QueuedConnection);
+}
+
+void ipcPublishSourceOperatingSystem(deskflow::shortcuts::DeviceOS os)
+{
+  if (auto *server = deskflow::core::ipc::CoreIpcServer::existingInstance())
+    QMetaObject::invokeMethod(server, [server, os] { server->setSourceOperatingSystem(os); }, Qt::QueuedConnection);
+}
+
+void ipcPublishServerModifierMapping(bool active)
+{
+  if (auto *server = deskflow::core::ipc::CoreIpcServer::existingInstance())
+    QMetaObject::invokeMethod(server, [server, active] { server->setServerModifierMapping(active); }, Qt::QueuedConnection);
 }
 
 namespace {

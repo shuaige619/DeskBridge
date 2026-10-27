@@ -1,0 +1,125 @@
+# SPDX-FileCopyrightText: (C) 2026 DeskBridge contributors
+# SPDX-License-Identifier: MIT
+name: DeskBridge Linux x86_64 package
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["codex/**"]
+    paths:
+      - "src/**"
+      - "deploy/linux/**"
+      - "CMakeLists.txt"
+      - "VERSION"
+      - "README*.md"
+      - "docs/**"
+      - ".github/workflows/personal-linux.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  linux-x86_64:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Install Flatpak build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder ostree binutils python3 git
+          # Ubuntu's runner policy restricts unprivileged user namespaces;
+          # Flatpak's build sandbox needs them on this disposable runner.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: Install the declared KDE SDK and runtime
+        run: |
+          flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user --noninteractive flathub org.kde.Sdk//6.11 org.kde.Platform//6.11
+      - name: Fetch pinned dependency sources for license verification
+        run: |
+          mkdir -p build/dependency-sources
+          git clone --filter=blob:none https://gitlab.freedesktop.org/libinput/libei.git build/dependency-sources/libei
+          git -C build/dependency-sources/libei checkout --detach 8a46bf3d4b6af7f25a61be53386cf618218114ef
+          git clone --filter=blob:none https://github.com/flatpak/libportal.git build/dependency-sources/libportal
+          git -C build/dependency-sources/libportal checkout --detach c23024018c8eb076549a1517fcb2d7f80d3e2ed5
+      - name: Build and test the complete x86_64 application
+        run: |
+          mkdir -p build
+          set -o pipefail
+          flatpak-builder --user --arch=x86_64 --disable-rofiles-fuse --force-clean --keep-build-dirs \
+            build/personal-linux-flatpak deploy/linux/personal-flatpak.yml 2>&1 | tee build/linux-flatpak-build.log
+      - name: Export the tested application without installing it
+        env:
+          DESKBRIDGE_DEPENDENCY_SOURCES: ${{ github.workspace }}/build/dependency-sources
+        run: |
+          ./deploy/linux/package-personal-flatpak.sh build/personal-linux-flatpak dist/linux "$GITHUB_SHA"
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, subprocess
+          root = pathlib.Path('.')
+          output = root / 'dist/linux'
+          paths = subprocess.check_output(['git', 'ls-files', '-z']).split(b'\0')
+          hashes = {os.fsdecode(p): hashlib.sha256((root / os.fsdecode(p)).read_bytes()).hexdigest()
+                    for p in paths if p and (root / os.fsdecode(p)).is_file()}
+          record = {
+              'sourceCommit': os.environ['GITHUB_SHA'],
+              'sourceTree': subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], text=True).strip(),
+              'workflowRun': f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+              'architecture': 'x86_64',
+              'runtime': 'org.kde.Platform/x86_64/6.11',
+              'sdkCommit': subprocess.check_output(['flatpak', 'info', '--user', '--show-commit', 'org.kde.Sdk//6.11'], text=True).strip(),
+              'runtimeCommit': subprocess.check_output(['flatpak', 'info', '--user', '--show-commit', 'org.kde.Platform//6.11'], text=True).strip(),
+              'dependencyCommits': {
+                  'libei': '8a46bf3d4b6af7f25a61be53386cf618218114ef',
+                  'libportal': 'c23024018c8eb076549a1517fcb2d7f80d3e2ed5'},
+              'files': hashes,
+          }
+          (output / 'SOURCE-MANIFEST.json').write_text(json.dumps(record, indent=2) + '\n')
+          PY
+      - name: Independently import and inspect the exact bundle
+        run: |
+          (cd dist/linux && sha256sum --check SHA256SUMS)
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path('dist/linux/verification.json').read_text())
+          assert report['problems'] == [], report['problems']
+          assert len(report['elfFiles']) == 6, report['elfFiles']
+          PY
+          ostree --repo=build/verify-linux-repository init --mode=archive-z2
+          flatpak build-import-bundle build/verify-linux-repository dist/linux/DeskBridge-*-linux-x86_64.flatpak
+          ostree --repo=build/verify-linux-repository checkout --user-mode --force-copy \
+            app/local.shuai.deskbridge/x86_64/stable build/verify-linux-export
+          cmp dist/linux/export/files/libexec/deskbridge/DeskBridge \
+            build/verify-linux-export/files/libexec/deskbridge/DeskBridge
+          cmp dist/linux/export/files/libexec/deskbridge/deskflow-core \
+            build/verify-linux-export/files/libexec/deskbridge/deskflow-core
+          diff --recursive dist/linux/export/files/lib build/verify-linux-export/files/lib
+          cmp README-LINUX.md build/verify-linux-export/files/share/README-DeskBridge-Linux.md
+          test -s build/verify-linux-export/files/share/licenses/deskbridge/THIRD-PARTY-NOTICES.md
+          test -s build/verify-linux-export/files/share/licenses/deskbridge/libportal-0.10.0/COPYING.GPL3
+          readelf -h build/verify-linux-export/files/libexec/deskbridge/DeskBridge | grep 'Advanced Micro Devices X86-64'
+      - name: Upload Linux package and source record
+        uses: actions/upload-artifact@v7
+        with:
+          name: deskbridge-linux-x86_64
+          path: |
+            dist/linux/DeskBridge-*-linux-x86_64.flatpak
+            dist/linux/INSTALL-Linux.md
+            dist/linux/SHA256SUMS
+            dist/linux/SOURCE-MANIFEST.json
+            dist/linux/verification.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Preserve build and regression diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: deskbridge-linux-x86_64-diagnostics
+          path: |
+            build/linux-flatpak-build.log
+            .flatpak-builder/build/deskbridge-*/build/personal-linux/linux-regressions.xml
+            .flatpak-builder/build/deskbridge-*/build/personal-linux/src/unittests/Testing/Temporary/
+          if-no-files-found: ignore
+          retention-days: 14

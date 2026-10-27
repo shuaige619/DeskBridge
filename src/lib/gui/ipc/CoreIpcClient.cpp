@@ -27,6 +27,11 @@ void CoreIpcClient::sendLogLevel(const QString &level)
   sendMessage(QStringLiteral("logLevel=%1").arg(level));
 }
 
+void CoreIpcClient::requestDeviceContext()
+{
+  sendMessage(QStringLiteral("deviceContextQuery"));
+}
+
 void CoreIpcClient::sendLayoutCommand(const QString &command, const QString &args)
 {
   sendMessage(args.isEmpty() ? command : command + QStringLiteral("=") + args);

@@ -360,6 +360,7 @@ void Client::setOptions(const OptionsList &options)
 void Client::setSourceOperatingSystem(deskflow::shortcuts::DeviceOS os)
 {
   m_computer->setSourceOperatingSystem(os);
+  ipcPublishSourceOperatingSystem(os);
   LOG_INFO("DeskBridge source OS: %s", qPrintable(deskflow::shortcuts::deviceOSName(os)));
 }
 

@@ -41,8 +41,8 @@ ComputerSetupModel::ComputerSetupModel(ComputerList &computers, int numColumns, 
 
 QVariant ComputerSetupModel::data(const QModelIndex &index, int role) const
 {
-  if (!index.isValid() || index.row() > m_NumRows || index.row() < 0 || index.column() < 0 ||
-      index.column() > m_NumColumns)
+  if (!index.isValid() || index.row() >= m_NumRows || index.row() < 0 || index.column() < 0 ||
+      index.column() >= m_NumColumns)
     return QVariant();
 
   if (computer(index).isNull())
@@ -53,10 +53,7 @@ QVariant ComputerSetupModel::data(const QModelIndex &index, int role) const
     return computer(index).pixmap();
 
   case Qt::ToolTipRole:
-    return QString(tr("<center>Computer: <b>%1</b></center>"
-                      "<br>Double click to edit settings"
-                      "<br>Drag computer to the trashcan to remove it"))
-        .arg(computer(index).name());
+    return tr("设备：%1\n双击编辑名称、别名与设备行为；拖动可调整屏幕位置。").arg(computer(index).name());
 
   case Qt::DisplayRole:
     return computer(index).name();

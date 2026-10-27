@@ -29,6 +29,15 @@ if [[ -d $prepared/export ]]; then cp -a "$prepared/export" "$export_dir/export"
 cp -a "$prepared/files/libexec/deskbridge" "$export_dir/files/libexec/"
 if [[ -d $prepared/files/libexec/share ]]; then cp -a "$prepared/files/libexec/share" "$export_dir/files/libexec/"; fi
 cp -a "$prepared/files/share/." "$export_dir/files/share/"
+# Refresh both sandbox and cached host-export branding from source when the
+# prepared sandbox was finalized with an older icon.
+for share_dir in "$export_dir/files/share" "$export_dir/export/share"; do
+  [[ -d $share_dir ]] || continue
+  icon_dir="$share_dir/icons/hicolor"
+  mkdir -p "$icon_dir/512x512/apps" "$icon_dir/symbolic/apps"
+  cp "$repo_dir/deploy/linux/deskbridge.png" "$icon_dir/512x512/apps/local.shuai.deskbridge.png"
+  cp "$repo_dir/src/apps/res/icons/deskbridge-symbolic.svg" "$icon_dir/symbolic/apps/local.shuai.deskbridge-symbolic.svg"
+done
 for library in "$prepared/files/lib"/libei.so* "$prepared/files/lib"/libeis.so* "$prepared/files/lib"/libportal.so* "$prepared/files/lib"/libportal-qt6.so*; do
   [[ -f $library ]] && cp -a "$library" "$export_dir/files/lib/"
 done

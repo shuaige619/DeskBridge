@@ -15,12 +15,22 @@ namespace {
 const QSet<QString> &booleanKeys()
 {
   static const QSet<QString> keys{
-      Settings::Gui::AutoStartCore, Settings::Gui::Autohide, Settings::Gui::CloseToTray,
-      Settings::Client::InvertXScroll, Settings::Client::InvertYScroll,
-      Settings::Client::DynamicConnectionRetry, Settings::Client::LanguageSync,
-      Settings::Core::PreventSleep, Settings::Core::EnableEnterCommand, Settings::Core::EnableExitCommand,
-      Settings::Security::TlsEnabled, Settings::Security::CheckPeers,
-      Settings::Log::GuiDebug, Settings::Log::ToFile,
+      Settings::Gui::AutoStartCore,
+      Settings::Gui::Autohide,
+      Settings::Gui::CloseToTray,
+      Settings::Gui::ShowVersionInTitle,
+      Settings::Gui::SymbolicTrayIcon,
+      Settings::Client::InvertXScroll,
+      Settings::Client::InvertYScroll,
+      Settings::Client::DynamicConnectionRetry,
+      Settings::Client::LanguageSync,
+      Settings::Core::PreventSleep,
+      Settings::Core::EnableEnterCommand,
+      Settings::Core::EnableExitCommand,
+      Settings::Security::TlsEnabled,
+      Settings::Security::CheckPeers,
+      Settings::Log::GuiDebug,
+      Settings::Log::ToFile,
 #ifdef Q_OS_WIN
       Settings::Daemon::Elevate,
 #endif
@@ -32,10 +42,11 @@ const QSet<QString> &allowedKeys()
 {
   static const QSet<QString> keys = [] {
     auto result = booleanKeys();
-    result.unite({Settings::Client::XScrollScale, Settings::Client::YScrollScale,
-                  Settings::Core::Port, Settings::Core::Interface, Settings::Core::ProcessMode,
-                  Settings::Core::ComputerEnterCommand, Settings::Core::ComputerExitCommand,
-                  Settings::Log::Level, Settings::Log::File});
+    result.unite(
+        {Settings::Client::XScrollScale, Settings::Client::YScrollScale, Settings::Core::Port,
+         Settings::Core::Interface, Settings::Core::ProcessMode, Settings::Core::ComputerEnterCommand,
+         Settings::Core::ComputerExitCommand, Settings::Log::Level, Settings::Log::File}
+    );
     return result;
   }();
   return keys;
@@ -112,8 +123,7 @@ bool validatePreferenceChanges(const QVariantMap &changes, QString *error)
       if (!integralValue(value) || !ok || port < 1 || port > 65535)
         return fail(error, QStringLiteral("连接端口必须是 1 到 65535 之间的整数。"));
     } else if (key == Settings::Core::ProcessMode) {
-      if (!integralValue(value) ||
-          (value.toInt() != Settings::Desktop && value.toInt() != Settings::Service))
+      if (!integralValue(value) || (value.toInt() != Settings::Desktop && value.toInt() != Settings::Service))
         return fail(error, QStringLiteral("后台运行方式无效。"));
 #ifndef Q_OS_WIN
       if (value.toInt() != Settings::Desktop)
@@ -136,8 +146,7 @@ bool validatePreferenceChanges(const QVariantMap &changes, QString *error)
   }
 
   const auto checkCommand = [&](const QString &enabled, const QString &command) {
-    return !(changed(changes, enabled) || changed(changes, command)) ||
-           !mergedValue(changes, enabled).toBool() ||
+    return !(changed(changes, enabled) || changed(changes, command)) || !mergedValue(changes, enabled).toBool() ||
            !mergedValue(changes, command).toString().trimmed().isEmpty();
   };
   if (!checkCommand(Settings::Core::EnableEnterCommand, Settings::Core::ComputerEnterCommand) ||
@@ -154,12 +163,20 @@ bool validatePreferenceChanges(const QVariantMap &changes, QString *error)
 bool preferencesRequireReconnect(const QVariantMap &changes)
 {
   static const QSet<QString> reconnectKeys{
-      Settings::Client::InvertXScroll, Settings::Client::InvertYScroll,
-      Settings::Client::XScrollScale, Settings::Client::YScrollScale,
-      Settings::Client::DynamicConnectionRetry, Settings::Client::LanguageSync,
-      Settings::Core::PreventSleep, Settings::Core::Port, Settings::Core::Interface,
-      Settings::Core::ProcessMode, Settings::Core::EnableEnterCommand, Settings::Core::EnableExitCommand,
-      Settings::Security::TlsEnabled, Settings::Security::CheckPeers,
+      Settings::Client::InvertXScroll,
+      Settings::Client::InvertYScroll,
+      Settings::Client::XScrollScale,
+      Settings::Client::YScrollScale,
+      Settings::Client::DynamicConnectionRetry,
+      Settings::Client::LanguageSync,
+      Settings::Core::PreventSleep,
+      Settings::Core::Port,
+      Settings::Core::Interface,
+      Settings::Core::ProcessMode,
+      Settings::Core::EnableEnterCommand,
+      Settings::Core::EnableExitCommand,
+      Settings::Security::TlsEnabled,
+      Settings::Security::CheckPeers,
 #ifdef Q_OS_WIN
       Settings::Daemon::Elevate,
 #endif

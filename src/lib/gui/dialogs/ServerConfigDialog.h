@@ -8,9 +8,9 @@
 
 #pragma once
 
-#include "ComputerSetupModel.h"
 #include "common/NetworkProtocol.h"
-#include "config/ServerConfig.h"
+#include "gui/ComputerSetupModel.h"
+#include "gui/config/ServerConfig.h"
 
 #include <QDialog>
 
@@ -29,10 +29,7 @@ public:
   ServerConfigDialog(QWidget *parent, ServerConfig &config);
   ~ServerConfigDialog() override;
   bool addClient(const QString &clientName);
-  void message(const QString &message)
-  {
-    m_message = message;
-  }
+  void message(const QString &message);
 
 protected:
   void onComputerRemoved();
@@ -97,6 +94,10 @@ private:
   bool isGeneralConfigModified() const;
   bool isGeneralConfigDefault() const;
   void setButtonBoxEnabledButtons() const;
+  void updateComputerControls() const;
+  void editComputer();
+  void removeComputer();
+  void exportConfig();
   std::unique_ptr<Ui::ServerConfigDialog> ui;
   QString m_message = "";
   int m_columns;

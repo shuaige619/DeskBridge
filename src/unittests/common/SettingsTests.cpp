@@ -5,6 +5,7 @@
  */
 
 #include "SettingsTests.h"
+#include "common/SettingsIniTransaction.h"
 
 #include <QFile>
 #include <QScopeGuard>
@@ -334,6 +335,55 @@ void SettingsTests::checkClearState()
   QVERIFY(Settings::value(Settings::Client::XdpRestoreToken).toString().isEmpty());
   QVERIFY(Settings::value(Settings::Server::XdpRestoreToken).toString().isEmpty());
   QCOMPARE(Settings::value(Settings::Core::ComputerName).toString(), QStringLiteral("keep-my-connection-settings"));
+}
+
+void SettingsTests::iniCaseMigrationKeepsEqualValuesAndRestoresKeySpelling()
+{
+  using namespace deskflow::settings_detail;
+  QTemporaryDir files;
+  QVERIFY(files.isValid());
+  const auto previousFile = Settings::settingsFile();
+  const auto restore = qScopeGuard([&] { Settings::setSettingsFile(previousFile); });
+  Settings::setSettingsFile(files.filePath(QStringLiteral("settings.conf")));
+  const QString oldName = QStringLiteral("computer_source/name");
+  const QString newName = QStringLiteral("computer_SOURCE/name");
+  const QString oldOption = QStringLiteral("computer_source/future/nested");
+  const QString newOption = QStringLiteral("computer_SOURCE/future/nested");
+  QVERIFY(Settings::trySetValues({{oldName, QStringLiteral("source")}, {oldOption, QStringLiteral("keep")}}));
+  const QVariantMap changes{{oldName, QVariant()}, {newName, QStringLiteral("SOURCE")},
+                            {oldOption, QVariant()}, {newOption, QStringLiteral("keep")}};
+  // Explicit sensitivity exercises only prefix selection on every host;
+  // native Windows CI separately checks QSettings's actual key semantics.
+  QCOMPARE(canonicalComputerKey(Settings::proxy().get(), newName, Qt::CaseInsensitive), oldName);
+  QCOMPARE(canonicalComputerKey(Settings::proxy().get(), newName, Qt::CaseSensitive), newName);
+  const auto normalized = canonicalComputerChanges(Settings::proxy().get(), changes, Qt::CaseInsensitive);
+  QCOMPARE(normalized.value(oldName).toString(), QStringLiteral("SOURCE"));
+  QCOMPARE(normalized.value(oldOption).toString(), QStringLiteral("keep"));
+  QCOMPARE(normalized.size(), 2);
+  const auto previous = snapshotStoredValues(Settings::proxy().get(), changes.keys());
+  const auto expectedNameKey = canonicalComputerKey(Settings::proxy().get(), newName);
+  const auto expectedOptionKey = canonicalComputerKey(Settings::proxy().get(), newOption);
+  QVERIFY(Settings::trySetValues(changes));
+  Settings::setValue(newOption, QStringLiteral("changed-set"));
+  QVERIFY(Settings::trySetValue(newOption, QStringLiteral("changed-try")));
+  QVERIFY(Settings::trySetValues({{newOption, QStringLiteral("keep")}}));
+  const auto forwardPath = files.filePath(QStringLiteral("forward.conf"));
+  QVERIFY(QFile::copy(Settings::settingsFile(), forwardPath));
+  const QSettings forward(forwardPath, QSettings::IniFormat);
+  QVERIFY(forward.allKeys().contains(expectedNameKey, Qt::CaseSensitive));
+  QVERIFY(forward.allKeys().contains(expectedOptionKey, Qt::CaseSensitive));
+  QCOMPARE(forward.value(expectedNameKey).toString(), QStringLiteral("SOURCE"));
+  QCOMPARE(forward.value(expectedOptionKey).toString(), QStringLiteral("keep"));
+  const auto unusedNameKey = expectedNameKey == oldName ? newName : oldName;
+  QVERIFY(!forward.allKeys().contains(unusedNameKey, Qt::CaseSensitive));
+  QVERIFY(Settings::trySetValues(previous));
+  const auto rollbackPath = files.filePath(QStringLiteral("rollback.conf"));
+  QVERIFY(QFile::copy(Settings::settingsFile(), rollbackPath));
+  const QSettings rollback(rollbackPath, QSettings::IniFormat);
+  QVERIFY(!rollback.allKeys().contains(newName, Qt::CaseSensitive));
+  QVERIFY(!rollback.allKeys().contains(newOption, Qt::CaseSensitive));
+  QCOMPARE(rollback.value(oldName).toString(), QStringLiteral("source"));
+  QCOMPARE(rollback.value(oldOption).toString(), QStringLiteral("keep"));
 }
 
 QTEST_MAIN(SettingsTests)

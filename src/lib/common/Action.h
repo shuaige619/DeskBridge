@@ -27,6 +27,7 @@ struct SettingsKeys
   inline static const QString SwitchDirection = QStringLiteral("switchInDirection");
   inline static const QString LockToComputer = QStringLiteral("lockCursorToScreen");
   inline static const QString ActiveOnRelease = QStringLiteral("activeOnRelease");
+  inline static const QString TapAtTrigger = QStringLiteral("tapAtTrigger");
   inline static const QString HasComputers = QStringLiteral("hasScreens");
   inline static const QString RestartServer = QStringLiteral("restartServer");
 };
@@ -94,6 +95,15 @@ public:
   bool activeOnRelease() const;
   void setActiveOnRelease(bool b);
 
+  bool tapAtTrigger() const
+  {
+    return m_tapAtTrigger;
+  }
+  void setTapAtTrigger(bool tap)
+  {
+    m_tapAtTrigger = tap;
+  }
+
   bool haveComputers() const;
   void setHaveComputers(bool b);
 
@@ -110,8 +120,9 @@ private:
   int m_switchDirection = static_cast<int>(SwitchDirection::left);
   int m_lockCursorMode = static_cast<int>(LockCursorMode::toggle);
   bool m_activeOnRelease = false;
+  bool m_tapAtTrigger = false;
   bool m_hasComputers = false;
-  bool m_restartServer;
+  bool m_restartServer = false;
 
   inline static const QString m_commandTemplate = QStringLiteral("(%1)");
   inline static const QStringList m_actionTypeNames{

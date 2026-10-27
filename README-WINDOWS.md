@@ -18,7 +18,7 @@ Windows 包由仓库中的手动 GitHub Actions 工作流构建。工作流会�
 
 更新 Portable 版时，先退出应用，将新 ZIP 解压到新目录，再把旧目录中的整个 `settings/` 文件夹复制过去（包括 `settings/tls/`）。新 ZIP 自带空白配置标记，直接覆盖解压会覆盖已有配置。
 
-两种包均不包含 daemon，不安装系统服务；UAC 安全桌面和登录屏幕不在桌面进程模式的可用范围内。GUI/core 的单实例及本机 IPC 使用 `local.shuai.deskbridge` 身份，与原 Deskflow 隔离。首次连接需要正常核对与信任证书。窗口位置等 GUI 状态也可能写入当前用户的 DeskBridge 状态目录。
+两种包均不包含 daemon，不安装系统服务；UAC 安全桌面和登录屏幕不在桌面进程模式的可用范围内。GUI/core 的单实例及本机 IPC 使用 `local.shuai.deskbridge` 身份，与其他安装身份隔离。首次连接需要正常核对与信任证书。窗口位置等 GUI 状态也可能写入当前用户的 DeskBridge 状态目录。
 
 ## 在 Windows 构建
 
@@ -96,4 +96,4 @@ Mac 的 `⌘` 在 Windows 原生层对应 Win/Super 修饰键；当前代码提�
 
 ## Linux 个人构建
 
-Ubuntu 安装与构建步骤见 [README-LINUX.md](README-LINUX.md)。完整屏幕布局的远程调整需要两端运行配套 DeskBridge；旧 Deskflow 仍可使用兼容的键鼠共享协议。
+Ubuntu 安装与构建步骤见 [README-LINUX.md](README-LINUX.md)。完整屏幕布局的远程调整需要两端运行配套 DeskBridge。

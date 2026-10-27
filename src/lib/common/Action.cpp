@@ -13,13 +13,22 @@
 
 QString Action::text() const
 {
-  auto text = QString(m_actionTypeNames.at(type()));
+  int outputType = type();
+  // Older preferences can store a mouse sequence under the keyboard action
+  // indices. Emit the mouse command so button 1 is never sent as the "1" key.
+  if (keySequence().isMouseButton() && outputType >= static_cast<int>(Type::keyDown) &&
+      outputType <= static_cast<int>(Type::keystroke))
+    outputType += static_cast<int>(Type::mouseDown);
+  auto text = QString(m_actionTypeNames.value(outputType));
 
   switch (static_cast<Action::Type>(type())) {
     using enum Type;
   case keyDown:
   case keyUp:
-  case keystroke: {
+  case keystroke:
+  case mouseDown:
+  case mouseUp:
+  case mousebutton: {
     QString commandArgs = keySequence().toString();
 
     if (!keySequence().isMouseButton()) {
@@ -79,6 +88,7 @@ void Action::loadSettings(QSettings &settings)
   setSwitchDirection(settings.value(SettingsKeys::SwitchDirection, static_cast<int>(SwitchDirection::left)).toInt());
   setLockCursorMode(settings.value(SettingsKeys::LockToComputer, static_cast<int>(LockCursorMode::toggle)).toInt());
   setActiveOnRelease(settings.value(SettingsKeys::ActiveOnRelease, false).toBool());
+  setTapAtTrigger(settings.value(SettingsKeys::TapAtTrigger, false).toBool());
   setHaveComputers(settings.value(SettingsKeys::HasComputers, false).toBool());
   setRestartServer(settings.value(SettingsKeys::RestartServer, false).toBool());
 }
@@ -99,6 +109,7 @@ void Action::saveSettings(QSettings &settings) const
   settings.setValue(SettingsKeys::SwitchDirection, m_switchDirection);
   settings.setValue(SettingsKeys::LockToComputer, m_lockCursorMode);
   settings.setValue(SettingsKeys::ActiveOnRelease, m_activeOnRelease);
+  settings.setValue(SettingsKeys::TapAtTrigger, m_tapAtTrigger);
   settings.setValue(SettingsKeys::HasComputers, m_hasComputers);
   settings.setValue(SettingsKeys::RestartServer, m_restartServer);
 }

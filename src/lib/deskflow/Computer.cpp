@@ -12,6 +12,7 @@
 #include "deskflow/IKeyState.h"
 #include "common/Constants.h"
 #include "common/Settings.h"
+#include "deskflow/ipc/CoreIpc.h"
 
 #include <QProcess>
 #include <algorithm>
@@ -347,6 +348,7 @@ void Computer::resetOptions()
   if (!m_remoteModifierMap.empty())
     LOG_INFO("DeskBridge modifier remap: none");
   m_remoteModifierMap.clear();
+  ipcPublishServerModifierMapping(false);
   setSourceOperatingSystem(shortcuts::DeviceOS::Unknown);
   m_shortcutConfigLoaded = false;
 
@@ -403,6 +405,7 @@ void Computer::setOptions(const OptionsList &options)
 
   if (hadModifierMap != !m_remoteModifierMap.empty()) {
     m_shortcutConfigLoaded = false;
+    ipcPublishServerModifierMapping(!m_remoteModifierMap.empty());
     LOG_INFO("DeskBridge modifier remap: %s", m_remoteModifierMap.empty() ? "none" : "active");
   }
 

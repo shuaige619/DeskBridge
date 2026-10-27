@@ -8,9 +8,12 @@ set(MY_DIR ${CMAKE_CURRENT_LIST_DIR})
 set(_desktop_file "${MY_DIR}/org.deskflow.deskflow.desktop")
 set(_metainfo_file "${MY_DIR}/org.deskflow.deskflow.metainfo.xml")
 set(_icon_id "org.deskflow.deskflow")
+set(_icon_png "${MY_DIR}/org.deskflow.deskflow.png")
+set(_icon_symbolic "${CMAKE_SOURCE_DIR}/src/apps/res/icons/deskflow-light/apps/64/org.deskflow.deskflow-symbolic.svg")
 if(DESKBRIDGE_PERSONAL_BUILD)
-  # Reuse the upstream artwork without replacing its installed icon or launcher.
   set(_icon_id "${CMAKE_PROJECT_REV_FQDN}")
+  set(_icon_png "${MY_DIR}/deskbridge.png")
+  set(_icon_symbolic "${CMAKE_SOURCE_DIR}/src/apps/res/icons/deskbridge-symbolic.svg")
   file(READ "${_desktop_file}" _desktop)
   string(REPLACE "=Deskflow" "=DeskBridge" _desktop "${_desktop}")
   string(REPLACE "Exec=deskflow" "Exec=\"${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/${DESKFLOW_GUI_TARGET}\"" _desktop "${_desktop}")
@@ -31,11 +34,11 @@ install(
 )
 
 # Install our icon
-install(FILES ${MY_DIR}/org.deskflow.deskflow.png DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/512x512/apps/ RENAME ${_icon_id}.png)
+install(FILES "${_icon_png}" DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/512x512/apps/ RENAME ${_icon_id}.png)
 
 # Install our symbolic icon
 install(
-  FILES ${CMAKE_SOURCE_DIR}/src/apps/res/icons/deskflow-light/apps/64/org.deskflow.deskflow-symbolic.svg
+  FILES "${_icon_symbolic}"
   DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/symbolic/apps/
   RENAME ${_icon_id}-symbolic.svg
 )

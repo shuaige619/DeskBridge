@@ -25,12 +25,12 @@ ComputerLineNameValidator::ComputerLineNameValidator(
 )
     : LineEditValidator(lineEdit, error)
 {
-  addValidator(std::make_unique<EmptyStringValidator>(tr("Computer name cannot be empty")));
-  addValidator(std::make_unique<SpacesValidator>(tr("Computer name cannot contain spaces")));
-  addValidator(std::make_unique<ComputerNameValidator>(tr("Contains invalid characters or is too long")));
+  addValidator(std::make_unique<EmptyStringValidator>(tr("设备名称不能为空")));
+  addValidator(std::make_unique<SpacesValidator>(tr("设备名称不能包含空格")));
+  addValidator(std::make_unique<ComputerNameValidator>(tr("名称含有无效字符，或超过 255 个字符")));
   addValidator(
       std::make_unique<ComputerDuplicationsValidator>(
-          tr("A computer with this name already exists"), lineEdit ? lineEdit->text() : "", pComputers
+          tr("已有设备使用此名称或别名"), lineEdit ? lineEdit->text() : "", pComputers
       )
   );
 }

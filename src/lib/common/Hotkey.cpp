@@ -74,15 +74,32 @@ QTextStream &operator<<(QTextStream &outStream, const Hotkey &hotkey)
   if (hotkey.actions().size() == 0)
     return outStream;
 
-  QString outText = QStringLiteral("\t%1 = ").arg(hotkey.text());
-  for (int i = 0; i < hotkey.actions().size(); i++) {
-    outText.append(hotkey.actions().at(i).text());
-    if (i != hotkey.actions().size() - 1) {
-      outText.append(QStringLiteral(", "));
+  QStringList onPress;
+  QStringList onRelease;
+  for (const auto &action : hotkey.actions()) {
+    const auto type = static_cast<Action::Type>(action.type());
+    const bool paired = type == Action::Type::keystroke || type == Action::Type::mousebutton;
+    // Old GUI preferences have no tap flag. Preserve their native lifecycle:
+    // press holds the output and release lets go, including mouse drags.
+    auto &commands = action.activeOnRelease() && (!paired || action.tapAtTrigger()) ? onRelease : onPress;
+    if (paired && action.tapAtTrigger()) {
+      // Native keystroke()/mousebutton() hold Down until the trigger is
+      // released. The graphical editor promises a complete tap at its chosen
+      // phase, so expand the pair explicitly without changing native syntax.
+      Action down = action;
+      Action up = action;
+      const bool mouse = action.keySequence().isMouseButton();
+      down.setType(static_cast<int>(mouse ? Action::Type::mouseDown : Action::Type::keyDown));
+      up.setType(static_cast<int>(mouse ? Action::Type::mouseUp : Action::Type::keyUp));
+      commands.append(down.text());
+      commands.append(up.text());
+    } else {
+      commands.append(action.text());
     }
   }
-  outText.append(QStringLiteral("\n"));
-
-  outStream << outText;
+  outStream << QStringLiteral("\t%1 = %2").arg(hotkey.text(), onPress.join(QStringLiteral(", ")));
+  if (!onRelease.isEmpty())
+    outStream << QStringLiteral("; ") << onRelease.join(QStringLiteral(", "));
+  outStream << QLatin1Char('\n');
   return outStream;
 }

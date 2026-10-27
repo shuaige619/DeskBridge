@@ -29,6 +29,7 @@ add_library(common STATIC
   SourceDeviceOptions.h
   Settings.h
   Settings.cpp
+  SettingsIniTransaction.h
   ShortcutRules.h
   ShortcutRules.cpp
   ShortcutMapper.h

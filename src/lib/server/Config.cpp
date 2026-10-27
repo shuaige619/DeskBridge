@@ -16,13 +16,13 @@
 #include "net/SocketException.h"
 #include "server/Server.h"
 
+#include <array>
 #include <assert.h>
+#include <cmath>
 #include <cstdlib>
 #include <istream>
 #include <ostream>
-#include <array>
 #include <queue>
-#include <cmath>
 
 using namespace deskflow::string;
 
@@ -61,7 +61,8 @@ deskflow::layout::Snapshot Config::screenLayout(const std::string &serverName) c
       const auto direction = static_cast<LayoutDirection>(source.getSide());
       const auto neighbor = getCanonicalName(destination.getName());
       if (!deskflow::layout::isCardinal(direction) || neighbor.empty() || neighbor == name ||
-          source.getSide() != destination.getSide() || source.getInterval() != full || destination.getInterval() != full)
+          source.getSide() != destination.getSide() || source.getInterval() != full ||
+          destination.getInterval() != full)
         return result;
       bool reciprocal = false;
       for (const auto &[backSource, backDestination] : m_map.at(neighbor)) {
@@ -70,30 +71,36 @@ deskflow::layout::Snapshot Config::screenLayout(const std::string &serverName) c
             backDestination.getInterval() == full && getCanonicalName(backDestination.getName()) == name)
           reciprocal = true;
       }
-      if (!reciprocal) return result;
+      if (!reciprocal)
+        return result;
       const auto offset = delta.at(static_cast<size_t>(direction));
       const Position target{position.first + offset.first, position.second + offset.second};
-      if (std::abs(target.first) > deskflow::layout::kMaxCoordinate || std::abs(target.second) > deskflow::layout::kMaxCoordinate)
+      if (std::abs(target.first) > deskflow::layout::kMaxCoordinate ||
+          std::abs(target.second) > deskflow::layout::kMaxCoordinate)
         return result;
       if (const auto found = positions.find(neighbor); found != positions.end()) {
-        if (found->second != target) return result;
+        if (found->second != target)
+          return result;
       } else {
         positions.emplace(neighbor, target);
         pending.push(neighbor);
       }
     }
   }
-  if (positions.size() != m_map.size()) return result;
+  if (positions.size() != m_map.size())
+    return result;
   std::set<Position> occupied;
   for (const auto &[name, position] : positions) {
-    if (!occupied.insert(position).second) return result;
+    if (!occupied.insert(position).second)
+      return result;
     // Every touching grid edge must be an actual route. Otherwise a visual
     // grid would promise a crossing that the running core cannot perform.
     for (int direction = 1; direction <= 4; ++direction) {
       const auto offset = delta.at(direction);
       const Position neighborPosition{position.first + offset.first, position.second + offset.second};
       for (const auto &[other, otherPosition] : positions) {
-        if (otherPosition == neighborPosition && getNeighbor(name, static_cast<Direction>(direction), 0.5, nullptr) != other)
+        if (otherPosition == neighborPosition &&
+            getNeighbor(name, static_cast<Direction>(direction), 0.5, nullptr) != other)
           return result;
       }
     }
@@ -102,10 +109,12 @@ deskflow::layout::Snapshot Config::screenLayout(const std::string &serverName) c
     result.screens.push_back({QString::fromStdString(name), position.first, position.second});
   if (positions.size() == 2) {
     for (const auto &[name, position] : positions) {
-      if (name == canonical) continue;
+      if (name == canonical)
+        continue;
       result.clientName = QString::fromStdString(name);
       for (int direction = 1; direction <= 4; ++direction)
-        if (position == delta.at(direction)) result.direction = static_cast<LayoutDirection>(direction);
+        if (position == delta.at(direction))
+          result.direction = static_cast<LayoutDirection>(direction);
     }
   }
   result.revision = deskflow::layout::revisionFor(result);
@@ -658,8 +667,9 @@ void Config::readSectionOptions(ConfigReadContext &s)
   while (s.readLine(line)) {
     if (line == "end") {
       return;
-    } else if (const auto l = QString::fromStdString(line).simplified();
-               !l.startsWith(QStringLiteral("keystroke")) && !l.startsWith(QStringLiteral("mousepress"))) {
+    } else if (const auto l = QString::fromStdString(line).simplified(); !l.startsWith(QStringLiteral("keystroke")) &&
+                                                                         !l.startsWith(QStringLiteral("mousebutton")) &&
+                                                                         !l.startsWith(QStringLiteral("mousepress"))) {
       continue;
     }
 
@@ -717,9 +727,9 @@ void Config::readSectionOptions(ConfigReadContext &s)
 
 void Config::readSectionScreens(ConfigReadContext &s)
 {
-  qWarning(
-  ) << "Your server config has a screen section. Screens have moved to the general config this section will not be "
-       "parsed.";
+  qWarning()
+      << "Your server config has a screen section. Screens have moved to the general config this section will not be "
+         "parsed.";
   std::string line;
   std::string screen;
   while (s.readLine(line)) {
@@ -803,9 +813,9 @@ void Config::readSectionLinks(ConfigReadContext &s)
 
 void Config::readSectionAliases(ConfigReadContext &s)
 {
-  qWarning(
-  ) << "Your server config has an alias section. Alias have moved to the general config this section will no be "
-       "parsed.";
+  qWarning()
+      << "Your server config has an alias section. Alias have moved to the general config this section will no be "
+         "parsed.";
   std::string line;
   while (s.readLine(line)) {
     if (line == "end") {

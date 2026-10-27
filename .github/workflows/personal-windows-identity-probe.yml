@@ -1,0 +1,51 @@
+# SPDX-FileCopyrightText: (C) 2026 DeskBridge contributors
+# SPDX-License-Identifier: MIT
+name: Windows native connection identity probe
+
+on:
+  push:
+    branches: ['codex/**']
+    paths:
+      - '.github/workflows/personal-windows-identity-probe.yml'
+      - 'src/lib/gui/personal/ConnectionIdentity.cpp'
+      - 'src/lib/common/SettingsIniTransaction.h'
+      - 'tools/windows-identity-probe/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-qtcore-probe:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up MSVC x64
+        uses: TheMrMilchmann/setup-msvc-dev@v4
+        with:
+          arch: amd64
+      - name: Restore the pinned Qt environment
+        uses: jurplel/install-qt-action@v4
+        env:
+          AQT_CONFIG: ${{ github.workspace }}/.github/actions/install-dependencies/aqt.ini
+        with:
+          version: '6.11.2'
+          arch: win64_msvc2022_64
+          archives: qtbase qtsvg qtdeclarative qttools qttranslations
+          cache: true
+          aqtsource: git+https://github.com/miurahr/aqtinstall.git@16db45a70b5905ad596941b223469bc86a56901e
+      - name: Compile the actual helper against QtCore and probe native INI behavior
+        shell: pwsh
+        run: ./tools/windows-identity-probe/run-probe.ps1 -QtRoot $env:QT_ROOT_DIR
+      - name: Preserve the native probe report and compiler output
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: deskbridge-windows-identity-probe
+          path: |
+            build/windows-identity-probe/result.json
+            build/windows-identity-probe/compile.log
+            build/windows-identity-probe/probe.log
+          if-no-files-found: ignore
+          retention-days: 14

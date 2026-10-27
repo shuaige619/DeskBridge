@@ -30,10 +30,12 @@ tests=(ScreenLayoutTests ScreenLayoutPersistenceTests ServerConfigTests ServerTe
   PreferenceChangesTests PreferencesApplyControllerTests AdvancedPageTests
   ShortcutRulesTests ShortcutMapperTests ShiftTapGestureTests ShortcutPageTests ChordRecorderTests
   ShortcutApplyControllerTests ComputerShortcutTests OSXShortcutMapperTests LoginStartupTests
-  SettingsTests IpcServerAccessTests)
+  SettingsTests IpcServerAccessTests TrayIconTests ConnectionIdentityTests ConnectionOptionsDialogTests
+  EditorDialogTests ServerSettingsDialogTests SupportDialogTests ReceiverDeviceControlDialogTests
+  HotkeySerializationTests)
 test_regex=$(IFS='|'; printf '%s' "${tests[*]}")
 state_dir=$(mktemp -d "${TMPDIR:-/tmp}/deskbridge-release-tests.XXXXXX")
 trap 'rm -rf -- "$state_dir"' EXIT
-HOME="$state_dir" XDG_CONFIG_HOME="$state_dir/config" XDG_STATE_HOME="$state_dir/state" \
+XDG_CONFIG_HOME="$state_dir/config" XDG_STATE_HOME="$state_dir/state" \
   QT_QPA_PLATFORM=offscreen ctest --test-dir "$build_dir/src/unittests" \
   -R "^($test_regex)$" --no-tests=error --output-on-failure

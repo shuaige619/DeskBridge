@@ -22,6 +22,8 @@ private Q_SLOTS:
   void sourceMetadataChunkBoundaries();
   void sourceMetadataResets_data();
   void sourceMetadataResets();
+  void sourceMetadataIpcStartupReplay();
+  void sourceMetadataIpcValidation();
 
 private:
   QTemporaryDir m_files;

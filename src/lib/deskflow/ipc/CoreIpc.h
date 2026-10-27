@@ -8,12 +8,15 @@
 
 #include "common/Enums.h"
 #include "common/ScreenLayout.h"
+#include "common/ShortcutRules.h"
 #include "deskflow/ScreenLayoutProtocol.h"
 
 #include <QString>
 
 void ipcSendToClient(const QString &command, const QString &args = "");
 void ipcSendConnectionState(deskflow::core::ConnectionState state);
+void ipcPublishSourceOperatingSystem(deskflow::shortcuts::DeviceOS os);
+void ipcPublishServerModifierMapping(bool active);
 
 class IEventQueue;
 void ipcSetLayoutTarget(IEventQueue *events, void *target);

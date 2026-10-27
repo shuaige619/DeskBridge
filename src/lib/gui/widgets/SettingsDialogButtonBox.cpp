@@ -28,8 +28,12 @@ SettingsDialogButtonBox::SettingsDialogButtonBox(QWidget *parent)
   settingsWritableChanged(Settings::isWritable());
 
   auto layout = new QHBoxLayout(this);
+  setProperty("personalFooter", true);
+  layout->setContentsMargins(24, 14, 24, 16);
+  layout->setSpacing(8);
   layout->addWidget(m_lblIcon);
   layout->addWidget(m_lblText);
+  layout->addStretch();
   layout->addWidget(m_buttonBox);
   setLayout(layout);
 
@@ -71,13 +75,18 @@ void SettingsDialogButtonBox::changeEvent(QEvent *e)
 
 void SettingsDialogButtonBox::updateText()
 {
-  m_lblText->setText(tr("Settings are read only"));
-  m_lblText->setToolTip(tr("%1 is not writable").arg(Settings::settingsFile()));
+  m_lblText->setText(tr("设置为只读"));
+  m_lblText->setToolTip(tr("无法写入 %1").arg(Settings::settingsFile()));
+  m_buttonBox->button(QDialogButtonBox::Save)->setText(tr("保存更改"));
+  m_buttonBox->button(QDialogButtonBox::Save)->setProperty("primaryButton", true);
+  m_buttonBox->button(QDialogButtonBox::Cancel)->setText(tr("取消"));
+  m_buttonBox->button(QDialogButtonBox::Reset)->setText(tr("还原更改"));
+  m_buttonBox->button(QDialogButtonBox::RestoreDefaults)->setText(tr("恢复默认"));
 
-  m_buttonBox->button(QDialogButtonBox::Save)->setToolTip(tr("Close and save changes"));
-  m_buttonBox->button(QDialogButtonBox::Cancel)->setToolTip(tr("Close and forget changes"));
-  m_buttonBox->button(QDialogButtonBox::Reset)->setToolTip(tr("Reset to stored values"));
-  m_buttonBox->button(QDialogButtonBox::RestoreDefaults)->setToolTip(tr("Reset to default values"));
+  m_buttonBox->button(QDialogButtonBox::Save)->setToolTip(tr("保存本窗口的更改并关闭"));
+  m_buttonBox->button(QDialogButtonBox::Cancel)->setToolTip(tr("放弃本窗口的更改并关闭"));
+  m_buttonBox->button(QDialogButtonBox::Reset)->setToolTip(tr("还原为已保存的设置"));
+  m_buttonBox->button(QDialogButtonBox::RestoreDefaults)->setToolTip(tr("将本窗口恢复为默认草稿，保存后生效"));
 }
 
 void SettingsDialogButtonBox::settingsWritableChanged(bool writable)

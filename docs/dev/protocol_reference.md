@@ -1,11 +1,11 @@
 # Protocol Reference {#protocol_reference}
 
-This document provides a comprehensive reference for the Deskflow network protocol. It is the primary source of information for developers implementing Deskflow clients or extending the protocol.
+This document provides a comprehensive reference for the DeskBridge network protocol. It is the primary source of information for developers implementing DeskBridge clients or extending the protocol.
  
 
 ## Protocol Overview
 
-The Deskflow protocol enables keyboard and mouse sharing between multiple computers over a TCP network connection. The protocol uses two distinct sets of terminology to describe the roles of the computers involved:
+The DeskBridge protocol enables keyboard and mouse sharing between multiple computers over a TCP network connection. The default seven-byte protocol identifier is `Barrier`; the compatibility identifier is `Synergy`. These wire values are not the GUI product name. The protocol uses two distinct sets of terminology to describe the roles of the computers involved:
 
 - **Network Role (Client/Server)**: This describes the connection architecture.
   - **Server**: The machine that listens for incoming TCP connections.
@@ -15,7 +15,7 @@ The Deskflow protocol enables keyboard and mouse sharing between multiple comput
   - **Primary**: The computer whose keyboard and mouse are currently being used to control other computers.
   - **Secondary**: A computer that is being controlled by the Primary's keyboard and mouse.
 
-In a typical setup, the Primary computer (the one whose keyboard and mouse are shared) also acts as the Server. However, the protocol is flexible and allows these roles to be separate. For example, a Primary machine can act as a Client to connect to a Secondary machine that is configured as a Server. This can be useful for navigating restrictive network environments like firewalls.
+In DeskBridge, the computer sharing its physical keyboard and mouse runs as the Server/Primary. The receiving computers connect as Clients/Secondaries. These roles correspond to the source and receiver settings in the GUI.
 
 Throughout the documentation, message direction is often described using the Primary/Secondary roles to clarify the input control flow, while Client/Server roles are used when discussing the underlying network connection.
 
@@ -370,9 +370,9 @@ Client                                 Server
   |                                      | TCP connection established
   |                                      |
   | ◄─────────────────────────────────── |
-  | "Deskflow" + version (1.8)           | Hello message
+  | "Barrier" + version (1.8)           | Hello message
   |                                      |
-  | "Deskflow" + version + name          |
+  | "Barrier" + version + name          |
   | ───────────────────────────────────► | HelloBack message
   |                                      |
   | ◄─────────────────────────────────── |
@@ -452,7 +452,7 @@ Client                                 Server
 ### Debug Tools
 
 - **Wireshark**: Capture and analyze network traffic
-- **Protocol Logs**: Enable verbose logging in Deskflow
+- **Protocol Logs**: Enable verbose logging in DeskBridge
 - **Message Validation**: Check message format against specification
 
 ## Platform-Specific Implementations

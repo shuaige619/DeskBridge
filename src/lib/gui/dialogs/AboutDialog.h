@@ -9,6 +9,7 @@
 #pragma once
 
 #include <QDialog>
+#include <memory>
 
 namespace Ui {
 class AboutDialog;
@@ -23,5 +24,6 @@ public:
 
 private:
   std::unique_ptr<Ui::AboutDialog> ui;
+  QString versionText() const;
   void copyVersionText() const;
 };

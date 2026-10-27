@@ -6,7 +6,7 @@
  */
 
 #include "ComputerSettingsDialog.h"
-#include "ui_ComputerSettingsDialog.h"
+#include "EditorViews.h"
 
 #include "gui/config/Computer.h"
 #include "validators/AliasValidator.h"
@@ -29,7 +29,7 @@ ComputerSettingsDialog::ComputerSettingsDialog(QWidget *parent, Computer *comput
 {
 
   ui->setupUi(this);
-  ui->buttonBox->button(QDialogButtonBox::Cancel)->setFocus();
+  ui->lineNameEdit->setFocus();
 
   ui->lineNameEdit->setText(m_computer->name());
 
@@ -70,36 +70,42 @@ ComputerSettingsDialog::ComputerSettingsDialog(QWidget *parent, Computer *comput
   connect(ui->btnRemoveAlias, &QPushButton::clicked, this, &ComputerSettingsDialog::removeAlias);
   connect(ui->lineAddAlias, &QLineEdit::textChanged, this, &ComputerSettingsDialog::checkNewAliasName);
   connect(ui->listAliases, &QListWidget::itemSelectionChanged, this, &ComputerSettingsDialog::aliasSelected);
+  connect(ui->lineAddAlias, &QLineEdit::returnPressed, this, [this] {
+    if (ui->btnAddAlias->isEnabled())
+      addAlias();
+  });
+  connect(ui->lineNameEdit, &QLineEdit::textChanged, this, [this] {
+    ui->buttonBox->button(QDialogButtonBox::Ok)->setEnabled(ui->lineNameEdit->hasAcceptableInput());
+    checkNewAliasName(ui->lineAddAlias->text());
+  });
 }
 
 void ComputerSettingsDialog::accept()
 {
   if (ui->lineNameEdit->text().isEmpty()) {
-    QMessageBox::warning(
-        this, tr("Computer name is empty"),
-        tr("The computer name cannot be empty. "
-           "Please either fill in a name or cancel the dialog.")
-    );
+    QMessageBox::warning(this, tr("请填写设备名称"), tr("设备名称不能为空，请输入这台设备的屏幕名称。"));
     return;
   }
-  if (!ui->lblNameError->text().isEmpty()) {
+  if (!ui->lineNameEdit->hasAcceptableInput()) {
     return;
   }
 
-  m_computer->setName(ui->lineNameEdit->text());
-
-  m_computer->aliases().clear();
-
+  // Check every alias before touching the stored device, so a failed save
+  // followed by Cancel leaves its name and aliases unchanged.
   for (int i = 0; i < ui->listAliases->count(); i++) {
-    QString alias(ui->listAliases->item(i)->text());
+    const QString alias(ui->listAliases->item(i)->text());
     if (alias == ui->lineNameEdit->text()) {
       QMessageBox::warning(
-          this, tr("Computer name matches alias"),
-          tr("The computer name cannot be the same as an alias. "
-             "Please either remove the alias or change the computer name.")
+          this, tr("名称与别名重复"), tr("设备名称不能同时作为别名。请移除这个别名，或修改设备名称。")
       );
       return;
     }
+  }
+
+  m_computer->setName(ui->lineNameEdit->text());
+  m_computer->aliases().clear();
+  for (int i = 0; i < ui->listAliases->count(); i++) {
+    const QString alias = ui->listAliases->item(i)->text();
     if (!m_computer->aliases().contains(alias))
       m_computer->addAlias(alias);
   }
@@ -129,10 +135,12 @@ void ComputerSettingsDialog::accept()
 
 void ComputerSettingsDialog::addAlias()
 {
-  if (!ui->lineAddAlias->text().isEmpty() &&
+  if (!ui->lineAddAlias->text().isEmpty() && ui->lineAddAlias->hasAcceptableInput() &&
+      ui->lineAddAlias->text() != ui->lineNameEdit->text() &&
       ui->listAliases->findItems(ui->lineAddAlias->text(), Qt::MatchFixedString).isEmpty()) {
     new QListWidgetItem(ui->lineAddAlias->text(), ui->listAliases);
     ui->lineAddAlias->clear();
+    checkNewAliasName({});
   }
 }
 
@@ -144,7 +152,10 @@ void ComputerSettingsDialog::removeAlias() const
 
 void ComputerSettingsDialog::checkNewAliasName(const QString &text)
 {
-  ui->btnAddAlias->setEnabled(!text.isEmpty() && ui->lblAliasError->text().isEmpty());
+  ui->btnAddAlias->setEnabled(
+      !text.isEmpty() && ui->lineAddAlias->hasAcceptableInput() && text != ui->lineNameEdit->text() &&
+      ui->listAliases->findItems(text, Qt::MatchFixedString).isEmpty()
+  );
 }
 
 void ComputerSettingsDialog::aliasSelected()

@@ -53,6 +53,13 @@ public:
   QStringList mimeTypes() const override;
   QMimeData *mimeData(const QModelIndexList &indexes) const override;
   bool isFull() const;
+  const Computer *computerAt(const QModelIndex &index) const
+  {
+    if (!index.isValid() || index.model() != this || index.row() < 0 || index.row() >= m_NumRows ||
+        index.column() < 0 || index.column() >= m_NumColumns)
+      return nullptr;
+    return &m_computers.at(index.row() * m_NumColumns + index.column());
+  }
 
 Q_SIGNALS:
   void computersChanged();

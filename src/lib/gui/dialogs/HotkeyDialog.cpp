@@ -6,7 +6,7 @@
  */
 
 #include "HotkeyDialog.h"
-#include "ui_HotkeyDialog.h"
+#include "EditorViews.h"
 
 HotkeyDialog::HotkeyDialog(QWidget *parent, Hotkey &hotkey)
     : QDialog(parent, Qt::WindowTitleHint | Qt::WindowSystemMenuHint),
@@ -15,14 +15,22 @@ HotkeyDialog::HotkeyDialog(QWidget *parent, Hotkey &hotkey)
 {
   ui->setupUi(this);
 
-  ui->m_pKeySequenceWidgetHotkey->setText(m_Hotkey.text());
+  ui->m_pKeySequenceWidgetHotkey->setKeySequence(m_Hotkey.keySequence());
+  const auto updateSave = [this] {
+    ui->buttonBox->button(QDialogButtonBox::Ok)
+        ->setEnabled(sequenceWidget()->valid() && !sequenceWidget()->keySequence().toString().isEmpty());
+  };
+  connect(ui->m_pKeySequenceWidgetHotkey, &KeySequenceWidget::keySequenceChanged, this, updateSave);
+  connect(ui->buttonBox, &QDialogButtonBox::accepted, this, &HotkeyDialog::accept);
+  connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &HotkeyDialog::reject);
+  updateSave();
 }
 
 HotkeyDialog::~HotkeyDialog() = default;
 
 void HotkeyDialog::accept()
 {
-  if (!sequenceWidget()->valid())
+  if (!sequenceWidget()->valid() || sequenceWidget()->keySequence().toString().isEmpty())
     return;
 
   hotkey().setKeySequence(sequenceWidget()->keySequence());

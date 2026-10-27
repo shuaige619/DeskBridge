@@ -3,10 +3,13 @@
  * SPDX-License-Identifier: GPL-2.0-only WITH LicenseRef-OpenSSL-Exception
  */
 #include "base/Log.h"
+#include "deskflow/ipc/CoreIpc.h"
+#include "deskflow/ipc/CoreIpcServer.h"
 #include "deskflow/ipc/IpcServer.h"
 
 #include <QFile>
 #include <QFileInfo>
+#include <QLocalServer>
 #include <QLocalSocket>
 #include <QSignalSpy>
 #include <QTest>
@@ -52,6 +55,56 @@ class IpcServerAccessTests : public QObject
 {
   Q_OBJECT
 private Q_SLOTS:
+  void lateClientCanQueryCurrentDeviceContextAndDisconnectClearsIt()
+  {
+    using deskflow::core::ConnectionState;
+    using deskflow::core::ipc::CoreIpcServer;
+    using deskflow::shortcuts::DeviceOS;
+    CoreIpcServer server(nullptr);
+    // Do not call CoreIpcServer::listen(): its fixed runtime socket may belong
+    // to an installed app. Exercise the actual command handler over an isolated
+    // transport while leaving any real connection untouched.
+    QLocalServer transport;
+    const auto name = uniqueName();
+    QVERIFY(transport.listen(name));
+    QLocalSocket client;
+    client.connectToServer(name);
+    QVERIFY(client.waitForConnected(2000));
+    QTRY_VERIFY(transport.hasPendingConnections());
+    auto *peer = transport.nextPendingConnection();
+    QVERIFY(peer);
+
+    ipcSendConnectionState(ConnectionState::Connecting);
+    ipcPublishSourceOperatingSystem(DeviceOS::Linux);
+    ipcPublishServerModifierMapping(true);
+    ipcSendConnectionState(ConnectionState::Connected);
+    QCoreApplication::sendPostedEvents(&server, QEvent::MetaCall);
+    const auto query = [&] {
+      server.processCommand(peer, QStringLiteral("deviceContextQuery"), {QStringLiteral("deviceContextQuery")});
+      peer->flush();
+    };
+    query();
+    QTRY_VERIFY(client.canReadLine());
+    QCOMPARE(client.readLine(), QByteArray("sourceOperatingSystem=linux\n"));
+    QTRY_VERIFY(client.canReadLine());
+    QCOMPARE(client.readLine(), QByteArray("serverModifierMapping=active\n"));
+    // Querying must not consume the cache; another late GUI needs the same
+    // current metadata independently of the historical broadcast queue.
+    query();
+    QTRY_VERIFY(client.canReadLine());
+    QCOMPARE(client.readLine(), QByteArray("sourceOperatingSystem=linux\n"));
+    QTRY_VERIFY(client.canReadLine());
+    QCOMPARE(client.readLine(), QByteArray("serverModifierMapping=active\n"));
+
+    ipcSendConnectionState(ConnectionState::Disconnected);
+    QCoreApplication::sendPostedEvents(&server, QEvent::MetaCall);
+    query();
+    QTRY_VERIFY(client.canReadLine());
+    QCOMPARE(client.readLine(), QByteArray("sourceOperatingSystem=unknown\n"));
+    QTRY_VERIFY(client.canReadLine());
+    QCOMPARE(client.readLine(), QByteArray("serverModifierMapping=none\n"));
+  }
+
   void sameUserCanExchangeCommandsAndReceiveBroadcasts()
   {
     const auto name = uniqueName();

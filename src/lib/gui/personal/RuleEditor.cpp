@@ -5,6 +5,7 @@
 #include "RuleEditor.h"
 #include "ApplicationPicker.h"
 #include "ChordRecorder.h"
+#include "DialogStyle.h"
 #include "PersonalStyle.h"
 
 #include <QCheckBox>
@@ -24,8 +25,12 @@ namespace deskflow::gui::personal {
 RuleEditor::RuleEditor(
     const shortcuts::Configuration &configuration, const shortcuts::Rule &rule, QWidget *parent,
     shortcuts::DeviceOS detectedSourceOS
-) : QDialog(parent), m_configuration(configuration), m_original(rule), m_apps(configuration.apps),
-    m_sourceOS(shortcuts::effectiveSourceOS(configuration, detectedSourceOS))
+)
+    : QDialog(parent),
+      m_configuration(configuration),
+      m_original(rule),
+      m_apps(configuration.apps),
+      m_sourceOS(shortcuts::effectiveSourceOS(configuration, detectedSourceOS))
 {
   const bool existing = !rule.id.isEmpty();
   if (!existing)
@@ -142,8 +147,10 @@ RuleEditor::RuleEditor(
     remove->setObjectName(QStringLiteral("deleteRule"));
     footer->addWidget(remove);
     connect(remove, &QPushButton::clicked, this, [this] {
-      if (QMessageBox::question(this, tr("删除规则"), tr("从待应用的配置中删除这条规则？"),
-                                QMessageBox::Cancel | QMessageBox::Yes, QMessageBox::Cancel) == QMessageBox::Yes) {
+      if (QMessageBox::question(
+              this, tr("删除规则"), tr("从待应用的配置中删除这条规则？"), QMessageBox::Cancel | QMessageBox::Yes,
+              QMessageBox::Cancel
+          ) == QMessageBox::Yes) {
         m_delete = true;
         QDialog::accept();
       }
@@ -180,7 +187,7 @@ RuleEditor::RuleEditor(
   });
   rebuildApplications();
   updatePreview();
-  applyPersonalStyle(this);
+  prepareDialog(this, width(), height());
   m_name->setFocus();
 }
 
@@ -221,7 +228,8 @@ shortcuts::Rule RuleEditor::rule() const
   for (const auto &app : m_apps)
     result.apps.removeAll(app);
   for (const auto *check : m_appChecks)
-    if (check->isChecked()) result.apps.append(check->property("applicationId").toString());
+    if (check->isChecked())
+      result.apps.append(check->property("applicationId").toString());
   result.apps.removeDuplicates();
   return result;
 }
@@ -239,12 +247,17 @@ bool RuleEditor::deletionRequested() const
 QString RuleEditor::validationError() const
 {
   const auto candidate = rule();
-  if (candidate.name.isEmpty()) return tr("请输入规则名称。");
-  if (candidate.input.key == kKeyNone) return tr("请录入远程键盘输入的快捷键。");
-  if (candidate.output.key == kKeyNone) return tr("请录入本机应收到的快捷键。");
+  if (candidate.name.isEmpty())
+    return tr("请输入规则名称。");
+  if (candidate.input.key == kKeyNone)
+    return tr("请录入远程键盘输入的快捷键。");
+  if (candidate.output.key == kKeyNone)
+    return tr("请录入本机应收到的快捷键。");
   bool hasApp = false;
-  for (const auto *check : m_appChecks) hasApp |= check->isChecked();
-  if (!hasApp) return tr("请至少选择一个当前生效的应用。");
+  for (const auto *check : m_appChecks)
+    hasApp |= check->isChecked();
+  if (!hasApp)
+    return tr("请至少选择一个当前生效的应用。");
   auto config = m_configuration;
   config.apps = m_apps;
   bool replaced = false;
@@ -255,7 +268,8 @@ QString RuleEditor::validationError() const
       break;
     }
   }
-  if (!replaced) config.rules.append(candidate);
+  if (!replaced)
+    config.rules.append(candidate);
   return shortcuts::validate(config);
 }
 
@@ -263,14 +277,20 @@ void RuleEditor::updatePreview()
 {
   QStringList names;
   for (const auto *check : m_appChecks)
-    if (check->isChecked()) names.append(check->text());
+    if (check->isChecked())
+      names.append(check->text());
   const auto candidate = rule();
   m_preview->setText(tr("在 %1 中：\n%2  →  %3")
-                         .arg(names.isEmpty() ? tr("所选应用") : names.join(tr("、")),
-                              shortcuts::chordText(candidate.input, m_sourceOS), shortcuts::chordText(candidate.output)));
-  m_terminalWarning->setVisible(shortcuts::localOS() == shortcuts::DeviceOS::MacOS
-      ? candidate.apps.contains(QStringLiteral("com.openai.codex")) && m_apps.contains(QStringLiteral("com.openai.codex"))
-      : !names.isEmpty());
+                         .arg(
+                             names.isEmpty() ? tr("所选应用") : names.join(tr("、")),
+                             shortcuts::chordText(candidate.input, m_sourceOS), shortcuts::chordText(candidate.output)
+                         ));
+  m_terminalWarning->setVisible(
+      shortcuts::localOS() == shortcuts::DeviceOS::MacOS
+          ? candidate.apps.contains(QStringLiteral("com.openai.codex")) &&
+                m_apps.contains(QStringLiteral("com.openai.codex"))
+          : !names.isEmpty()
+  );
   const auto error = validationError();
   m_error->setText(error);
   m_error->setVisible(!error.isEmpty());
