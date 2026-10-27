@@ -1,0 +1,66 @@
+name: DeskBridge Ubuntu 22.04 native DEB
+on:
+  push:
+    branches: [codex/ubuntu22-deb-v1.27.0.3]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Prepare exact published application source
+        run: |
+          test "$(git rev-parse 'v1.27.0.3^{}')" = 92fba6658f9530844c1fa23f43365e5c820c7b11
+          sudo mkdir -p /job/source /job/output /work
+          sudo ln -s "$GITHUB_WORKSPACE/deploy/linux/deb" /job/recipe
+          git archive --format=tar v1.27.0.3 | sudo tee /job/source.tar >/dev/null
+          sudo tar -xf /job/source.tar -C /job/source
+          sha256sum /job/source.tar | sudo tee /job/source-archive.sha256
+      - name: Install fixed SDK and build tools
+        run: sudo /job/recipe/setup.sh > setup.log 2>&1
+      - name: Build unmodified application and run Linux regressions
+        run: sudo env DESKBRIDGE_BUILD_JOBS=4 /job/recipe/build.sh > build.log 2>&1
+      - name: Package native DEB with private runtime
+        env:
+          DESKBRIDGE_SOURCE_COMMIT: 92fba6658f9530844c1fa23f43365e5c820c7b11
+        run: |
+          SOURCE_DATE_EPOCH=$(git show -s --format=%ct 'v1.27.0.3^{}')
+          sudo env DESKBRIDGE_SOURCE_COMMIT="$DESKBRIDGE_SOURCE_COMMIT" SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" python3 /job/recipe/package.py > package.log 2>&1
+          sudo dpkg-query -W -f='${binary:Package}\t${Version}\n' > build-packages.txt
+          sudo /work/venv/bin/pip freeze > build-python-tools.txt
+      - name: Verify exact DEB in clean Ubuntu 22.04 without SDK
+        run: docker run --rm --platform linux/amd64 --volume /job:/job ubuntu:22.04 bash /job/recipe/verify.sh > verify.log 2>&1
+      - name: Upload verified DEB and records
+        uses: actions/upload-artifact@v7
+        with:
+          name: deskbridge-ubuntu22.04-amd64-deb
+          path: |
+            /job/output/
+            /job/verify-results/
+            /job/source-archive.sha256
+            /work/build-deskbridge/linux-regressions.xml
+            build-packages.txt
+            build-python-tools.txt
+            verify.log
+          if-no-files-found: error
+          retention-days: 30
+      - name: Preserve diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: deskbridge-ubuntu22.04-deb-diagnostics
+          path: |
+            setup.log
+            build.log
+            package.log
+            verify.log
+            /work/build-deskbridge/linux-regressions.xml
+            /work/build-deskbridge/src/unittests/Testing/Temporary/
+          if-no-files-found: ignore
+          retention-days: 14
