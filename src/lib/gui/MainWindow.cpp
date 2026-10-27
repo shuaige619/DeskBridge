@@ -1561,6 +1561,10 @@ void MainWindow::saveSettings() const
 
 void MainWindow::setTrayIcon()
 {
+#if DESKBRIDGE_PERSONAL_BUILD && defined(Q_OS_WIN)
+  m_trayIcon->setIcon(appIcon());
+  return;
+#endif
 #if DESKBRIDGE_PERSONAL_BUILD && defined(Q_OS_MACOS)
   auto personalIcon = QIcon(QStringLiteral(":/icons/deskbridge-tray.svg"));
   personalIcon.setIsMask(true);
