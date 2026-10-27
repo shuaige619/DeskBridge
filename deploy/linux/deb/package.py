@@ -299,6 +299,10 @@ def main():
             real = resolved.resolve(strict=True)
             if real.is_relative_to(SDK) or real.is_relative_to(DEPS):
                 pending.append(add_library(real, needed))
+            elif real.is_relative_to(LIB):
+                if str(real.relative_to(ROOT)) not in origins:
+                    raise RuntimeError(f"Untracked private dependency: {resolved}")
+                pending.append(real)
             elif not (real.is_relative_to(Path("/usr/lib")) or real.is_relative_to(Path("/lib"))):
                 raise RuntimeError(f"Unexpected dependency origin: {resolved}")
     for path in elfs():
@@ -331,12 +335,13 @@ def main():
     launcher.chmod(0o755)
     components = prepare_notices()
     system, records = {}, []
+    private_names = {path.name for path in LIB.iterdir()}
     for path in elfs():
         resolved = dependencies(path, ENV)
         for needed, dependency in resolved:
             real = dependency.resolve(strict=True)
             if not real.is_relative_to(ROOT):
-                if needed.startswith(("libQt6", "libicu", "libei.", "libportal.")):
+                if needed in private_names or needed.startswith(("libQt6", "libei.", "libportal.")):
                     raise RuntimeError(f"Private dependency escaped package: {needed}: {real}")
                 system[needed] = str(real)
         records.append({"path": "/" + str(path.relative_to(ROOT)), "sha256": sha(path),

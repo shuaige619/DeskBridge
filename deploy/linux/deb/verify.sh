@@ -50,6 +50,7 @@ import re
 import subprocess
 
 paths = []
+private_names = {path.name for path in Path('/opt/deskbridge/lib').iterdir()}
 for path in Path('/opt/deskbridge').rglob('*'):
     if path.is_symlink():
         assert path.exists(), f'Dangling packaged symlink: {path}'
@@ -67,7 +68,7 @@ for path in Path('/opt/deskbridge').rglob('*'):
     resolved = subprocess.check_output(['ldd', str(path)], text=True)
     assert 'not found' not in resolved, (str(path), resolved)
     for name, origin in re.findall(r'^\s*(\S+)\s+=>\s+(\S+)', resolved, re.MULTILINE):
-        if name.startswith(('libQt6', 'libicu', 'libei.so', 'libportal.so')):
+        if name in private_names or name.startswith(('libQt6', 'libei.so', 'libportal.so')):
             assert Path(origin).resolve().is_relative_to('/opt/deskbridge'), (name, origin)
 assert len(paths) >= 2, 'Missing packaged ELF binaries'
 print(f'PASS: all {len(paths)} ELF files are amd64; private dependencies stay inside /opt/deskbridge.')
@@ -82,7 +83,7 @@ import subprocess
 environment = dict(os.environ, QT_QPA_PLATFORM='offscreen')
 for executable in ('/usr/bin/deskbridge', '/opt/deskbridge/libexec/deskbridge/deskflow-core'):
     output = subprocess.check_output([executable, '--version'], env=environment, text=True, stderr=subprocess.STDOUT)
-    versions = re.findall(r'(?<![\w.])\d+\.\d+\.\d+(?:\.\d+)?(?![\w.])', output)
+    versions = re.findall(r'(?<![\w.])v?(\d+\.\d+\.\d+(?:\.\d+)?)(?![\w.])', output)
     assert versions and versions[0] == '1.27.0.3', (executable, output)
     print(output, end='' if output.endswith('\n') else '\n')
 PY

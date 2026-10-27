@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Convert the Xvfb 24-bit/32-bpp little-endian XWD capture to PNG, using stdlib."""
+"""Convert Xvfb 24-bit little-endian XWD captures to PNG, using stdlib."""
 from pathlib import Path
 import struct
 import sys
@@ -10,16 +10,17 @@ data = source.read_bytes()
 header = struct.unpack('>25I', data[:100])
 size, version, format_, depth, width, height = header[:6]
 assert version == 7 and format_ == 2 and depth == 24
-assert header[7] == 0 and header[11] == 32
+assert header[7] == 0 and header[11] in (24, 32)
+step = header[11] // 8
 assert header[14:17] == (0xff0000, 0xff00, 0xff)
 stride = header[12]
 offset = size + header[19] * 12
 assert len(data) >= offset + stride * height
 scanlines = bytearray()
 for y in range(height):
-    row = data[offset + y * stride:offset + y * stride + width * 4]
+    row = data[offset + y * stride:offset + y * stride + width * step]
     rgb = bytearray(width * 3)
-    rgb[0::3], rgb[1::3], rgb[2::3] = row[2::4], row[1::4], row[0::4]
+    rgb[0::3], rgb[1::3], rgb[2::3] = row[2::step], row[1::step], row[0::step]
     scanlines.extend(b'\x00' + rgb)
 def chunk(kind, payload):
     body = kind + payload
