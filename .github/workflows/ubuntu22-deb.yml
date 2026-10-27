@@ -18,7 +18,7 @@ jobs:
         run: |
           test "$(git rev-parse 'v1.27.0.3^{}')" = 92fba6658f9530844c1fa23f43365e5c820c7b11
           sudo mkdir -p /job/source /job/output /work
-          sudo ln -s "$GITHUB_WORKSPACE/deploy/linux/deb" /job/recipe
+          sudo cp -a "$GITHUB_WORKSPACE/deploy/linux/deb" /job/recipe
           git archive --format=tar v1.27.0.3 | sudo tee /job/source.tar >/dev/null
           sudo tar -xf /job/source.tar -C /job/source
           sha256sum /job/source.tar | sudo tee /job/source-archive.sha256
