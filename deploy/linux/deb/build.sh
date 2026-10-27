@@ -28,6 +28,10 @@ fi
 meson compile -C /work/build-libportal -j6
 meson install -C /work/build-libportal
 if [[ ! -d /work/source ]]; then cp -a /job/source /work/source; fi
+id deskbridge-build >/dev/null 2>&1 || useradd -m -s /bin/bash deskbridge-build
+mkdir -p /work/build-deskbridge
+chown -R deskbridge-build:deskbridge-build /work/source /work/build-deskbridge
 cd /work/source
-./deploy/linux/build-personal.sh --test /work/build-deskbridge -DBUILD_INSTALLER=ON -DCMAKE_C_COMPILER=gcc-12 -DCMAKE_CXX_COMPILER=g++-12 -DGIT_SHA_SHORT=92fba665 -DCMAKE_INSTALL_LIBDIR=lib '-DCMAKE_C_FLAGS=-ffile-prefix-map=/work=/usr/src/deskbridge' '-DCMAKE_CXX_FLAGS=-ffile-prefix-map=/work=/usr/src/deskbridge'
+# Permission-denied regression cases require an ordinary user, not root.
+runuser -u deskbridge-build -- env PATH="$PATH" QT_PREFIX="$QT_PREFIX" CMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" PKG_CONFIG_PATH="$PKG_CONFIG_PATH" LD_LIBRARY_PATH="$LD_LIBRARY_PATH" DESKBRIDGE_INSTALL_PREFIX="$DESKBRIDGE_INSTALL_PREFIX" DESKBRIDGE_BUILD_JOBS="$DESKBRIDGE_BUILD_JOBS" ./deploy/linux/build-personal.sh --test /work/build-deskbridge -DBUILD_INSTALLER=ON -DCMAKE_C_COMPILER=gcc-12 -DCMAKE_CXX_COMPILER=g++-12 -DGIT_SHA_SHORT=92fba665 -DCMAKE_INSTALL_LIBDIR=lib '-DCMAKE_C_FLAGS=-ffile-prefix-map=/work=/usr/src/deskbridge' '-DCMAKE_CXX_FLAGS=-ffile-prefix-map=/work=/usr/src/deskbridge'
 DESTDIR=/work/stage cmake --install /work/build-deskbridge
